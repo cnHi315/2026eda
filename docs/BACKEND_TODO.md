@@ -7,7 +7,7 @@
 ## 角色与落点
 
 | 角色 | 负责模块 | 对应任务 | 交付 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | A | 数据模型 + 文件功能 | 任务 5 | `SchematicModel`(src/model)、`NetlistIO`(src/io) |
 | B | 用户界面 + 绘图编辑 | 任务 2、4 | src/main.cpp、src/ui(路线图见 IMPLEMENTATION_ROADMAP.md) |
 | C | 元件库 | 任务 3 | `ComponentLibrary`、各门元件(src/components) |

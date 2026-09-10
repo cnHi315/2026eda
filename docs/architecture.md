@@ -1,14 +1,14 @@
 # 架构设计说明
 
-> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-10(每次修改后更新这行)
+状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-10(每次修改后更新这行)
 
-## 一句话
+## 简述
 
 一个可执行程序,代码按模块分目录:UI 通过唯一契约 `src/contract/data_model.h` 与四个功能模块对接。
 
 ## 模块与依赖
 
-```
+```bash
 src/main.cpp ─┐
 src/ui        ├── 调用 ──▶ src/model       (SchematicModel)
               │           src/components  (ComponentLibrary)
@@ -45,15 +45,9 @@ src/ui        ├── 调用 ──▶ src/model       (SchematicModel)
 
 | 项 | 选择 | 说明 |
 | --- | --- | --- |
-| 语言 | C++17 | 项目标准 |
+| 语言 | C++17 | 课程要求 |
 | GUI | wxWidgets 3.2.2 | 界面骨架可用 wxFormBuilder 拖出 |
 | 构建 | CMake(唯一 CMakeLists.txt) | 加新 .cpp 自动收集 |
 | 文件 | JSON(开工时加 nlohmann/json 单头文件) | 由 A 引入 |
 | 网表 | 简化文本网表 | 格式参考 KiCad,由 A 研究 |
 | 仿真 | 事件队列 + 组合逻辑传播 | 交互参考 Logisim |
-
-## 约束与风险
-
-- 时间有限:优先 Must 功能;旋转、撤销/重做、时序电路是选做。
-- 最大的坑是集成:数据结构不统一。对策:契约 data_model.h 全组统一,改前先群同步。
-- 坐标:画布逻辑坐标,int,原点左上,**y 轴向下**(与 wxDC 一致),缩放由 ui 换算。

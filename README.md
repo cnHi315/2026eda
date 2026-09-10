@@ -19,7 +19,7 @@
 
 ## 二、结构约定:一个 src,五个模块
 
-```
+```menu
 src/
 ├── main.cpp        程序入口(B 维护)
 ├── contract/       ★ 唯一契约 data_model.h —— 改它必须全组同意并更新 docs
