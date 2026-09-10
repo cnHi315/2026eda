@@ -6,34 +6,28 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ---------------------------------------------------------------------------
-# wxWidgets
+# wxWidgets(仅程序界面需要;阶段一用到 PropertyGrid 时再加 propgrid 组件)
 # ---------------------------------------------------------------------------
-# core/base 供 MVT 使用，aui/propgrid/stc 已就绪，后续节点（属性表/树形库等）启用。
 set(wxWidgets_USE_UNICODE ON)
-find_package(wxWidgets REQUIRED COMPONENTS core base aui propgrid stc)
+find_package(wxWidgets REQUIRED COMPONENTS core base)
+include(${wxWidgets_USE_FILE})
 
 # ---------------------------------------------------------------------------
-# 测试框架：GoogleTest（无 sudo 场景下通过 FetchContent 拉取）
+# 契约头文件:src/ 对整个项目可见,各模块用 #include "contract/data_model.h" 引用
 # ---------------------------------------------------------------------------
-include(FetchContent)
-set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG        v1.15.2
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# ---------------------------------------------------------------------------
+# 源码自动收集:新加 .cpp 不需要改本文件,重新 cmake 即可
+# ---------------------------------------------------------------------------
+file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
+    src/main.cpp
+    src/model/*.cpp
+    src/ui/*.cpp
+    src/components/*.cpp
+    src/io/*.cpp
+    src/simulation/*.cpp
 )
-FetchContent_MakeAvailable(googletest)
 
-enable_testing()
-
-# ---------------------------------------------------------------------------
-# 共享契约头文件：core_interfaces.h 由 ui 与 core 共同引用。
-# 声明为目录级 include 路径，故 core / ui / tests 均可直接 #include "core_interfaces.h"。
-# ---------------------------------------------------------------------------
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# 依赖方向约束：ui -> core，core 不得依赖任何 wx。
-add_subdirectory(core)
-add_subdirectory(ui)
-add_subdirectory(tests)
+add_executable(CircuitEditor ${APP_SOURCES})
+target_link_libraries(CircuitEditor ${wxWidgets_LIBRARIES})

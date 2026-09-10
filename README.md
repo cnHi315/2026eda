@@ -1,157 +1,101 @@
-# Circuit Editor
+# 2026eda · 简易电路原理图编辑器
 
-> 类 Logisim 的工业级数字逻辑电路设计与仿真工具（C++17 + wxWidgets）
+类 Logisim 的数字逻辑电路设计与仿真工具(C++17 + wxWidgets)。
 
-本仓库是团队协作开发的**数字电路编辑器**。当前处于 **契约驱动开发（Contract-First）** 阶段：接口契约已冻结，UI 层与 Core 层可并行开展各自的 TDD 切片。
+> 当前状态:**阶段 0 —— 工具熟悉**。工程骨架已就绪(已验证:空白主窗口能弹出)。
+> 下一步:全组装好 VS2022 + wxWidgets 3.2.2,跑通最小示例工程。
 
 ---
 
-## 一、项目简介
-
-### 技术栈
+## 一、技术栈
 
 | 项 | 选型 |
 | --- | --- |
-| 语言标准 | C++17 |
-| GUI 框架 | wxWidgets 3.2 |
-| 构建系统 | CMake ≥ 3.16 |
-| 单元测试 | GoogleTest v1.15.2（CMake FetchContent 自动拉取，无需手动安装） |
+| 语言 | C++17 |
+| GUI | wxWidgets 3.2.2 |
+| 构建 | CMake ≥ 3.16(Windows:VS2022;Linux:make),**只有一个 CMakeLists.txt** |
+| 文件格式 | 保存/打开用 JSON(开工时引入 nlohmann/json 单头文件);网表为简化文本格式 |
+| 测试 | 手工核对表 [docs/test-plan.md](docs/test-plan.md)(不引入单元测试框架) |
 
-### 架构：单向依赖，严格解耦
+## 二、结构约定:一个 src,五个模块
 
 ```
-┌──────────────────────────┐
-│   ui   (wxWidgets 表现层) │   ← 仅此层允许出现 wx* 类型
-└────────────┬─────────────┘
-             │ 依赖（单向）
-             ▼
-┌──────────────────────────┐
-│   core (纯逻辑，无 GUI)   │   ← 禁止 include 任何 wx 头文件
-└──────────────────────────┘
+src/
+├── main.cpp        程序入口(B 维护)
+├── contract/       ★ 唯一契约 data_model.h —— 改它必须全组同意并更新 docs
+├── ui/             界面(B):窗口、画布、元件面板、属性表
+├── model/          数据模型(A):SchematicModel
+├── components/     元件库(C):ComponentLibrary、各门元件
+├── io/             文件功能(A):NetlistIO(保存/打开/导出网表)
+└── simulation/     仿真(D):Simulator
 ```
 
-- `ui` → `core` **单向依赖**；`core` 层必须能在**无图形环境**下独立编译与测试。
-- 两层之间**唯一**的耦合边界是契约头文件：`include/core_interfaces.h`
-  （`ICircuitElement` / `INetlistModel` / `ISimulationObserver`）。
-- 坐标等基础类型使用 POD（如 `core::Point`），**禁止**把 `wxPoint` / `wxSize` 泄漏进 core。
+规则:
 
-### 模块划分与分工
+- **model/components/io/simulation 里禁止出现 `#include <wx/...>`**(与界面无关,方便单独测试)。
+- 加新 .cpp 不用改 CMakeLists(自动收集)。
+- 依赖方向:ui 调用下面四个模块;四个模块互相不依赖,只依赖 contract。
+- 详见 [docs/architecture.md](docs/architecture.md)。
 
-| 模块 | 负责人 | 说明 |
+## 三、分工
+
+| 模块 | 负责人 | 任务 |
 | --- | --- | --- |
-| 模块 1 用户界面 / 模块 3 绘图与编辑 | UI（本仓库前端） | 见 `docs/IMPLEMENTATION_ROADMAP.md` |
-| 模块 2 元件库（数据层） | Role A | 见 `docs/BACKEND_TODO.md` |
-| 模块 5 仿真引擎 | Role B | 见 `docs/BACKEND_TODO.md` |
-| 模块 4 文件功能 / 网表导入导出 | Role C | 见 `docs/BACKEND_TODO.md` |
+| 架构 / 文件(model + io) | A | 任务 5、集成 |
+| GUI / 绘图编辑(main + ui) | B | 任务 2、任务 4 |
+| 元件库(components) | C | 任务 3 |
+| 仿真(simulation) | D | 任务 1、任务 6 |
 
-> 动手前请先阅读 `docs/BACKEND_TODO.md`（Core 组员）或 `docs/IMPLEMENTATION_ROADMAP.md`（UI 组员），认领属于自己的 TDD 切片。
+任务拆解见 [docs/BACKEND_TODO.md](docs/BACKEND_TODO.md)(A/C/D)与 [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md)(B)。
 
----
+## 四、构建
 
-## 二、Ubuntu 环境依赖
+### Windows(主力环境,VS2022)
 
-在 Ubuntu 上安装编译工具链、构建系统与 wxWidgets 开发包：
+1. 安装 VS2022 与 wxWidgets 3.2.2,并建好 `$(WXWIN)` 环境变量(指向解压的 wxWidgets 目录);
+2. 命令行构建:
+
+   ```bat
+   cmake -S . -B build -DwxWidgets_ROOT_DIR=%WXWIN%
+   cmake --build build --config Debug
+   ```
+
+   或在 VS2022 里直接"打开本地文件夹"(CMake 项目)。
+3. 可执行文件在 `build/Debug/CircuitEditor.exe`。
+
+> 找不到 wxWidgets 时,先检查 `$(WXWIN)` 环境变量;Debug/Release 与库版本要对应。
+
+### Ubuntu
 
 ```bash
-sudo apt update
 sudo apt install -y build-essential cmake git libwxgtk3.2-dev
-```
-
-> - GoogleTest **不需要** apt 安装：首次配置时由 CMake 通过 `FetchContent` 从 GitHub 拉取，
->   因此**首次配置需要联网**（会 `git clone` googletest，可能需要几分钟）。
-> - 若你的发行版 wxWidgets 版本较旧，请将 `libwxgtk3.2-dev` 换成对应版本的开发包
->   （例如 `libwxgtk3.0-gtk3-dev`）。
-
-### 环境自检
-
-```bash
-wx-config --version     # 期望输出 3.2.x
-cmake --version         # 期望 >= 3.16
-g++ --version
-```
-
----
-
-## 三、标准 MVT 启动步骤（cmake & make）
-
-在**仓库根目录**（即本文件所在目录）执行：
-
-```bash
-# 1. 配置（首次会拉取 GoogleTest，需要联网）
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-
-# 2. 编译
+cmake -S . -B build
 cmake --build build -j"$(nproc)"
-
-# 3. （可选）运行 Core 层单元测试
-ctest --test-dir build --output-on-failure
-
-# 4. 启动 GUI
-./build/ui/CircuitEditor
+./build/CircuitEditor
 ```
 
-也可以直接使用一键脚本完成「配置 + 编译 + 测试」：
+或一键:`./build.sh`。
 
-```bash
-./build.sh
-```
+### 验收:能弹出空白主窗口
 
-> **注意可执行文件路径**：可执行文件输出在 `build/ui/CircuitEditor`，
-> 而**不是** `build/CircuitEditor`。直接 `./build/CircuitEditor` 会报 `No such file`。
+窗口标题 `Circuit Editor`,含菜单栏、工具栏、状态栏 —— 说明编译链、链接链、运行链全通。
+**看到窗口之前不要开始各模块开发**,先和组内同步环境问题。
 
-### 无图形环境 / 远程服务器
+## 五、协作约定
 
-GUI 需要显示服务（X11 或 Wayland）。若在无桌面的服务器上，可用虚拟显示：
+- **契约优先**:改 `src/contract/data_model.h` 或四个类的签名,先在群里说一声,并同步更新 [docs/data-model.md](docs/data-model.md)、[docs/interfaces.md](docs/interfaces.md)。
+- 加新元件/新功能,顺手在 [docs/test-plan.md](docs/test-plan.md) 加一行核对项。
+- 不要提交构建产物(build/ 已忽略);安装包等大文件(resources/)不入库。
+- 每周在 [docs/dev-log.md](docs/dev-log.md) 记几行:完成、问题、下周计划。
 
-```bash
-sudo apt install -y xvfb
-xvfb-run -a ./build/ui/CircuitEditor
-```
+## 六、文档
 
----
-
-## 四、验收标准（务必遵守）
-
-> **必须在本机成功弹出一个空白主窗口，才算环境就绪。**
-
-窗口标题为 `Circuit Editor`，包含菜单栏、工具栏与状态栏即可 —— 这表示**编译链、链接链、运行链**三条链路全部打通。
-
-**在看到该窗口之前，请不要开始各自的 TDD 切片开发。** 如果卡在环境问题上，先与团队同步，避免各自踩坑。
-
----
-
-## 五、目录结构
-
-```
-circuit_editor/
-├── CMakeLists.txt              # 顶层构建配置（wxWidgets / GoogleTest / 子目录）
-├── build.sh                    # 一键构建 + 测试脚本
-├── include/
-│   └── core_interfaces.h       # ★ ui ↔ core 唯一契约（已冻结，改动需团队评审）
-├── core/                       # 纯逻辑静态库（无 wx 依赖）
-│   ├── CMakeLists.txt
-│   ├── include/editor/core/
-│   └── src/
-├── ui/                         # wxWidgets 表现层可执行目标
-│   ├── CMakeLists.txt
-│   └── src/
-├── tests/                      # GoogleTest 单元测试（仅依赖 core）
-│   ├── CMakeLists.txt
-│   └── test_core.cpp
-└── docs/
-    ├── IMPLEMENTATION_ROADMAP.md   # UI 组员四阶段开发路线图
-    └── BACKEND_TODO.md             # Core 组员（Role A/B/C）任务拆解
-```
-
----
-
-## 六、协作约定
-
-- **契约优先**：`include/core_interfaces.h` 为已冻结契约。任何修改都需同步通知全组，并同步更新 `docs/BACKEND_TODO.md`。
-- **TDD 节奏**：先写失败测试（红）→ 最小实现（绿）→ 重构。提交前确保 `ctest` 全绿。
-- **不要提交构建产物**：`build/` 等目录已在 `.gitignore` 中忽略，请勿强制加入。
-- **分层红线**：core 层代码中**不得**出现 `#include <wx/...>`；提交前可用如下命令自查：
-
-```bash
-grep -rn "#include <wx/" core/ && echo "❌ core 层混入 wx 依赖" || echo "✅ core 层保持纯净"
-```
+| 文件 | 用途 |
+| --- | --- |
+| [docs/requirement.md](docs/requirement.md) | 需求与验收标准(任务分解) |
+| [docs/architecture.md](docs/architecture.md) | 分层与依赖规则 |
+| [docs/data-model.md](docs/data-model.md) | 数据结构(最重要) |
+| [docs/interfaces.md](docs/interfaces.md) | 四个类的接口约定 |
+| [docs/test-plan.md](docs/test-plan.md) | 手工测试核对表 |
+| [docs/user-manual.md](docs/user-manual.md) | 演示/答辩用的操作说明 |
+| [docs/dev-log.md](docs/dev-log.md) | 开发日志 |
