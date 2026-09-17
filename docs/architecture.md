@@ -9,20 +9,19 @@
 ## 模块与依赖
 
 ```bash
-src/main.cpp ─┐
-src/ui        ├── 调用 ──▶ src/model       (SchematicModel)
-              │           src/components  (ComponentLibrary)
-              │           src/io          (NetlistIO)
-              │           src/simulation  (Simulator)
-              └── 全部只依赖 ──▶ src/contract/data_model.h
+ui ─┬─▶ model ──────┐
+    ├─▶ io          ├─▶ components
+    └─▶ simulation ─┘
+
+所有模块 ─▶ contract/data_model.h(唯一契约)
 ```
 
 依赖规则:
 
-- ui 可以调用 model / components / io / simulation 的类;
-- model / components / io / simulation **不依赖任何 wx 头文件**,互相之间也不依赖;
-- **不做独立的 Controller 层**:SchematicModel 的方法就是命令入口,ui 直接调用(做大了再考虑分层,别提前背负担);
-- 数据流:ui 改数据 → SchematicModel;ui 保存/导出 → NetlistIO;仿真 → Simulator 读 Schematic 计算,通过回调通知 ui 刷新。
+- **ui 调用其余四个模块**;**components 是叶子模块**,model 和 simulation 依赖它(分别取引脚模板、取逻辑功能);io 只依赖 contract。
+- **除 ui 外不许 include wx 头文件** —— 谁都能单独编译自己那块。
+- **不做独立的 Controller 层**:SchematicModel 的方法就是命令入口,ui 直接调用(做大了再考虑分层)。
+- 数据流:ui 改数据 → model;保存/导出 → io;仿真 → simulation 读 Schematic,回调通知 ui 刷新。
 
 ## 模块职责
 
@@ -45,7 +44,7 @@ src/ui        ├── 调用 ──▶ src/model       (SchematicModel)
 
 | 项 | 选择 | 说明 |
 | --- | --- | --- |
-| 语言 | C++17 | 课程要求 |
+| 语言 | C++17 | 项目标准 |
 | GUI | wxWidgets 3.2.2 | 界面骨架可用 wxFormBuilder 拖出 |
 | 构建 | CMake(唯一 CMakeLists.txt) | 加新 .cpp 自动收集 |
 | 文件 | JSON(开工时加 nlohmann/json 单头文件) | 由 A 引入 |

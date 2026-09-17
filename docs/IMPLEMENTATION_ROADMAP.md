@@ -10,7 +10,7 @@
 
 静态搭建各界面组件并完成布局,不含交互与真实数据。
 
-- [x] 环境配置(CMake + wxWidgets)——MVT 已跑通
+- [x] 环境配置(CMake + wxWidgets)——已跑通
 - [x] wxFrame 主窗口(含状态栏)
 - [x] 菜单栏
 - [x] 工具栏

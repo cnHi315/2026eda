@@ -2,8 +2,8 @@
 
 类 Logisim 的数字逻辑电路设计与仿真工具(C++17 + wxWidgets)。
 
-> 当前状态:**阶段 0 —— 工具熟悉**。工程骨架已就绪(已验证:空白主窗口能弹出)。
-> 下一步:全组装好 VS2022 + wxWidgets 3.2.2,跑通最小示例工程。
+> 当前状态:**阶段 0 收尾**。整条编译链已验证(能弹出主窗口)。
+> 下一步:其余三人配好环境,然后按分工各自开工。
 
 ---
 
@@ -13,7 +13,7 @@
 | --- | --- |
 | 语言 | C++17 |
 | GUI | wxWidgets 3.2.2 |
-| 构建 | CMake ≥ 3.16(Windows:VS2022;Linux:make),**只有一个 CMakeLists.txt** |
+| 构建 | CMake ≥ 3.16 + wxWidgets 3.2.x,**只有一个 CMakeLists.txt**(Windows/Linux 同一份) |
 | 文件格式 | 保存/打开用 JSON(开工时引入 nlohmann/json 单头文件);网表为简化文本格式 |
 | 测试 | 手工核对表 [docs/test-plan.md](docs/test-plan.md)(不引入单元测试框架) |
 
@@ -32,9 +32,9 @@ src/
 
 规则:
 
-- **model/components/io/simulation 里禁止出现 `#include <wx/...>`**(与界面无关,方便单独测试)。
+- **除 ui 外,任何模块禁止出现 `#include <wx/...>`**(方便各自单独编译)。
+- 依赖方向:ui 调用其余四个模块;**components 是叶子**,model 和 simulation 依赖它。
 - 加新 .cpp 不用改 CMakeLists(自动收集)。
-- 依赖方向:ui 调用下面四个模块;四个模块互相不依赖,只依赖 contract。
 - 详见 [docs/architecture.md](docs/architecture.md)。
 
 ## 三、分工
@@ -50,36 +50,31 @@ src/
 
 ## 四、构建
 
-### Windows(主力环境,VS2022)
+需要 CMake ≥ 3.16 + wxWidgets 3.2.x。同一份 CMakeLists.txt 两端通用,只是 wxWidgets 的找法不同。
 
-1. 安装 VS2022 与 wxWidgets 3.2.2,并建好 `$(WXWIN)` 环境变量(指向解压的 wxWidgets 目录);
-2. 命令行构建:
+### Windows
 
-   ```bat
-   cmake -S . -B build -DwxWidgets_ROOT_DIR=%WXWIN%
-   cmake --build build --config Debug
-   ```
+```bash
+# wxWidgets 路径换成自己机器上的;下面这组是本机已验证的
+cmake -S . -B build -G "MinGW Makefiles" \
+      -DwxWidgets_ROOT_DIR=G:/computer/wxWidgets-3.2.2.1 \
+      -DwxWidgets_LIB_DIR=G:/computer/wxWidgets-3.2.2.1/lib/gcc_lib
+cmake --build build -j
+```
 
-   或在 VS2022 里直接"打开本地文件夹"(CMake 项目)。
-3. 可执行文件在 `build/Debug/CircuitEditor.exe`。
+> VS Code:把上面两项填进 `.vscode/settings.json` 的 `cmake.configureSettings`,之后用 CMake Tools 构建(该文件已 gitignore,各人配各人的)。
 
-> 找不到 wxWidgets 时,先检查 `$(WXWIN)` 环境变量;Debug/Release 与库版本要对应。
-
-### Ubuntu
+### Linux
 
 ```bash
 sudo apt install -y build-essential cmake git libwxgtk3.2-dev
-cmake -S . -B build
-cmake --build build -j"$(nproc)"
-./build/CircuitEditor
+./build.sh        # 等价于 cmake -S . -B build && cmake --build build -j
 ```
 
-或一键:`./build.sh`。
+### 验收
 
-### 验收:能弹出空白主窗口
-
-窗口标题 `Circuit Editor`,含菜单栏、工具栏、状态栏 —— 说明编译链、链接链、运行链全通。
-**看到窗口之前不要开始各模块开发**,先和组内同步环境问题。
+跑起来弹出标题 `Circuit Editor` 的窗口(菜单栏 + 工具栏 + 状态栏)—— 说明编译、链接、运行三链全通。
+**看到窗口之前不要开始写自己那块**,先在群里同步环境问题。
 
 ## 五、协作约定
 
