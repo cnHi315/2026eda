@@ -1,7 +1,6 @@
 #pragma once
 // 原理图数据管理(负责人 A,对应任务 4/5 的数据侧)
 // 契约见 src/contract/data_model.h;接口汇总见 docs/interfaces.md
-
 #include <string>
 
 #include "contract/data_model.h"
@@ -24,8 +23,8 @@ public:
     bool moveElement(const std::string& id, Point pos);
 
     /// 连接两个引脚,返回网络 id;失败返回空串。
-    /// net 生成规则:from 或 to 已在某网络中则并入该网络,否则新建网络。
-    /// 拓扑约束:不允许两个输出引脚直连;不允许重复连线。
+    /// net 生成规则(四种情况):都不在则新建;一个在则并入;同在则不改动;分别在不同网络则合并。
+    /// 拓扑约束:不允许两个输出引脚直连;同一条线不能重复(两个端点相同,正反都算)。
     std::string addWire(PinRef from, PinRef to);
 
     /// 断开指定网络(删除该网络的全部导线),成功返回 true。
@@ -35,6 +34,12 @@ public:
     const Component* findComponent(const std::string& id) const;
 
 private:
+    // 查询引脚所属网络，没找到返回nullptr
+    Net* findNetOf(const PinRef& pir);
+
+    std::string newNetId();
+    std::string newWireId();
+
     Schematic schematic_;
 };
 
