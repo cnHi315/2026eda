@@ -14,8 +14,8 @@
 - [x] wxFrame 主窗口(含状态栏)
 - [x] 菜单栏
 - [x] 工具栏
-- [ ] wxTreeCtrl 树形元件库(挂载到布局)—— 可用 wxFormBuilder 拖出骨架再手改
-- [ ] wxPropertyGrid 属性表(挂载到布局)—— 需要时在 CMakeLists.txt 的 wx 组件里加 propgrid
+- [x] wxTreeCtrl 树形元件库(挂载到布局)—— 可用 wxFormBuilder 拖出骨架再手改
+- [x] wxPropertyGrid 属性表(挂载到布局)—— 需要时在 CMakeLists.txt 的 wx 组件里加 propgrid
 
 ## 阶段二:只读画布渲染
 

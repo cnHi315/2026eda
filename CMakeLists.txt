@@ -9,7 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # wxWidgets(仅程序界面需要;阶段一用到 PropertyGrid 时再加 propgrid 组件)
 # ---------------------------------------------------------------------------
 set(wxWidgets_USE_UNICODE ON)
-find_package(wxWidgets REQUIRED COMPONENTS core base)
+find_package(wxWidgets REQUIRED COMPONENTS core base propgrid)
 include(${wxWidgets_USE_FILE})
 
 # ---------------------------------------------------------------------------
