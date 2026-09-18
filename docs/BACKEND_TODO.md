@@ -18,7 +18,7 @@
 ## A — 数据模型与文件(src/model + src/io)
 
 - [ ] A1 实现 `SchematicModel` 增删改查(addElement / removeElement / moveElement)。核对:test-plan T-02。
-- [ ] A2 实现 addWire / removeWire 及 net 生成规则(端点已在某网络则并入,否则新建;不允许输出直连/重复连线)。核对:test-plan T-03。
+- [ ] A2 实现 addWire / removeWire 及 net 生成规则(端点已在某网络则并入,否则新建;不允许输出直连/重复连线)。**addWire 已完成**(新建/并入/合并/已连通四种情况,含下标越界、自环、输出直连、重复连线四道校验);`removeWire` 待做。核对:test-plan T-03。
 - [ ] A3 `NetlistIO::save / load`:JSON 往返,id 保持稳定。开工时引入 nlohmann/json 单头文件放到 src/io/。核对:test-plan T-04。
 - [ ] A4 `NetlistIO::exportNetlist`:文本网表。**先导出 KiCad 的网表研究它的格式**,格式说明补进 docs/data-model.md。核对:test-plan T-05。
 

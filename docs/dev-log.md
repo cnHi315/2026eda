@@ -24,8 +24,8 @@
 
 > 周末回填,没做完就写做到哪了。
 
-- A:
-- B:
+- A:`SchematicModel::addWire` + net 生成规则完成 —— 新建 / 并入 / 合并 / 已连通四种情况,含下标越界、自环、输出直连、重复连线四道校验,16 项自测全过。[data-model.md](data-model.md) 的 net 规则同步补全(原先漏了"合并"和"已连通")。`addElement` 暂缓,等 C 的 `pinTemplate()`。
+- B:阶段一(静态骨架)完成 —— `MainFrame` 从 `main.cpp` 拆到 `src/ui/main_frame.*`;新增 `ComponentPalette`(wxTreeCtrl)/`CanvasPanel`(画布占位)/`PropertyPanel`(wxPropertyGrid),用 `wxBoxSizer(HORIZONTAL)` 挂成三栏;`CMakeLists.txt` 的 wxWidgets 组件加 `propgrid`。`cmake --build build --clean-first` 全量重建 0 warning/0 error,窗口核对通过(T-01)。
 - C:
 - D:完成 Simulator 核心实现，含引脚状态表、网络广播与 AND 门逻辑；手写假 Schematic 跑通与门真值表 4 组用例全 PASS；新增 sim_test 独立控制台目标，并修复了静态成员误写为命名空间函数导致的 LNK2019 链接错误。终端通过：
 测试: A=0, B=0 => LED=0 (期望=0) -> [PASS]

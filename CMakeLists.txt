@@ -12,10 +12,13 @@ if(MSVC)
 endif()
 
 # ---------------------------------------------------------------------------
-# wxWidgets(仅程序界面需要;阶段一用到 PropertyGrid 时再加 propgrid 组件)
+# wxWidgets(仅程序界面需要)
+# 顺序不能改:propgrid 必须排在 core 前面。
+# wxPropertyGrid 引用了 core 里的 wxOwnerDrawnComboBox,静态库按从左到右解析,
+# 排反了就 undefined reference —— 只在 MinGW/Windows 暴露,Linux 走 wx-config 不受影响。
 # ---------------------------------------------------------------------------
 set(wxWidgets_USE_UNICODE ON)
-find_package(wxWidgets REQUIRED COMPONENTS core base)
+find_package(wxWidgets REQUIRED COMPONENTS propgrid core base)
 include(${wxWidgets_USE_FILE})
 
 # ---------------------------------------------------------------------------
