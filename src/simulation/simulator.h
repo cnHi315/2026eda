@@ -4,6 +4,8 @@
 
 #include <functional>
 #include <string>
+#include <vector>
+#include <unordered_map>
 
 #include "contract/data_model.h"
 
@@ -27,6 +29,30 @@ public:
 
     /// 查询某引脚当前电平。
     SignalLevel query(const std::string& componentId, int pinIndex) const;
+
+private:
+    // --- 本周新增内部状态与辅助函数 ---
+
+    /// 缓存传入的原理图数据
+    Schematic m_schematic;
+
+    /// UI 回调函数
+    Callback m_callback = nullptr;
+
+    /// 记录各引脚当前电平：Key 为 "元件ID#引脚索引"，例如 "U1#0"
+    std::unordered_map<std::string, SignalLevel> m_pinStates;
+
+    /// 生成查找 Key
+    static std::string makeKey(const std::string& compId, int pinIndex);
+
+    /// 更新引脚电平并触发回调
+    void setPinLevel(const std::string& compId, int pinIndex, SignalLevel level, bool& changed);
+
+    /// 根据元件类型和输入引脚电平计算输出
+    static SignalLevel evalComponent(const std::string& type, const std::vector<SignalLevel>& inputs);
 };
+
+/// 本周任务要求的独立单元自测函数：脱离 UI 验证与门真值表
+void testAndGateTruthTable();
 
 } // namespace editor
