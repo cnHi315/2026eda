@@ -1,6 +1,6 @@
 # 模块接口约定
 
-> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-10(每次修改后更新这行)
+> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-23(每次修改后更新这行)
 > 四个类的声明分别在 src/model、src/components、src/io、src/simulation 的头文件里,本文档只做汇总,让每个人不用翻代码就知道别人提供什么。
 
 ## SchematicModel(src/model/schematic_model.h,负责人 A)
@@ -22,6 +22,26 @@
 | `std::vector<std::string> types() const` | 如 {"AND","OR","NOT","SWITCH","LED"} |
 | `std::string displayName(type) const` | "AND" → "与门" |
 | `std::vector<PinDescriptor> pinTemplate(type) const` | 该类型引脚模板 |
+
+### C 侧：pinTemplate 引脚模板对齐表(任务 3)
+
+> 以下 relPos 为相对元件原点的逻辑坐标,UI 画符号与命中检测均以此为准。
+> 坐标来源:B 画布临时端点,如后续调整需同步更新此表。
+
+| 类型 | 显示名 | 引脚名 | 方向 | relPos (x, y) |
+|------|--------|--------|------|---------------|
+| AND | 与门 | A | Input | (-50, -10) |
+| AND | 与门 | B | Input | (-50, 10) |
+| AND | 与门 | Y | Output | (50, 0) |
+| OR | 或门 | A | Input | (-50, -10) |
+| OR | 或门 | B | Input | (-50, 10) |
+| OR | 或门 | Y | Output | (50, 0) |
+| NOT | 非门 | A | Input | (-50, 0) |
+| NOT | 非门 | Y | Output | (50, 0) |
+| SWITCH | 开关 | A | Input | (-50, 0) |
+| SWITCH | 开关 | Y | Output | (50, 0) |
+| LED | LED | A | Input | (-50, 0) |
+| LED | LED | K | Output | (50, 0) |
 
 ## NetlistIO(src/io/netlist_io.h,负责人 A)
 
