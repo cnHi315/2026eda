@@ -27,8 +27,9 @@ public:
     /// 拓扑约束:不允许两个输出引脚直连;同一条线不能重复(两个端点相同,正反都算)。
     std::string addWire(PinRef from, PinRef to);
 
-    /// 断开指定网络(删除该网络的全部导线),成功返回 true。
-    bool removeWire(const std::string& netId);
+    /// 删掉一条导线,成功返回 true;找不到该 id 返回 false。
+    /// 参数是 Wire::id,不是网络 id。删完之后 nets 会整体重算(见 docs/data-model.md)。
+    bool removeWire(const std::string& wireId);
 
     /// 按 id 查找元件;不存在返回 nullptr。
     const Component* findComponent(const std::string& id) const;
@@ -37,6 +38,10 @@ private:
     // 查询引脚所属网络，没找到返回nullptr
     Net* findNetOf(const PinRef& pir);
 
+    // 从 wires_ 重新推导 nets_(删线 / 删元件之后调用)
+    void rebuildNets();
+
+    std::string newComponentId(const std::string& type);
     std::string newNetId();
     std::string newWireId();
 

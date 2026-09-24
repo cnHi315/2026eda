@@ -1,6 +1,6 @@
 # 模块接口约定
 
-> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-23(每次修改后更新这行)
+> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-25(每次修改后更新这行)
 > 四个类的声明分别在 src/model、src/components、src/io、src/simulation 的头文件里,本文档只做汇总,让每个人不用翻代码就知道别人提供什么。
 
 ## SchematicModel(src/model/schematic_model.h,负责人 A)
@@ -9,10 +9,10 @@
 | --- | --- |
 | `const Schematic& data() const` | 只读访问全部数据(UI 渲染用) |
 | `std::string addElement(type, Point)` | 放新元件,返回 id;失败返回空串 |
-| `bool removeElement(id)` | 删除元件并断开其导线 |
-| `bool moveElement(id, Point)` | 移动元件 |
+| `bool removeElement(id)` | 删除元件,连带删掉它引脚上的导线;nets 自动重算 |
+| `bool moveElement(id, Point)` | 移动元件(只改坐标,连接关系不变,nets 不动) |
 | `std::string addWire(PinRef from, PinRef to)` | 连线,返回网络 id;自动合并/新建 net(规则见 data-model.md) |
-| `bool removeWire(netId)` | 断开整个网络 |
+| `bool removeWire(wireId)` | 删掉**一条**导线(不是整个网络);被拆开的 net 自动重算 |
 | `const Component* findComponent(id) const` | 找不到返回 nullptr |
 
 ## ComponentLibrary(src/components/component_library.h,负责人 C)
@@ -81,5 +81,9 @@ sim.load(s);
 sim.setInput("SW1", 0, editor::SignalLevel::High);       // 打开开关
 sim.step();                                              // 传播
 ```
+
+**改完数据要重载仿真**:`Simulator::load()` 存的是原理图的**副本**,`SchematicModel` 之后再改动,它并不知道。
+UI 在每次增删元件/导线之后要重新调一次 `sim.load(model.data())`,否则仿真结果和画面对不上
+(最典型的:线删了,LED 还亮着)。
 
 > 约定:改任何签名前先在群里说一声,并更新本文档。

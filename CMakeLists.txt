@@ -48,3 +48,11 @@ target_link_libraries(CircuitEditor ${wxWidgets_LIBRARIES})
 #   ./build/sim_test          (Windows 上是 build\sim_test.exe)
 # ---------------------------------------------------------------------------
 add_executable(sim_test tests/main_test.cpp src/simulation/simulator.cpp)
+
+# ---------------------------------------------------------------------------
+# 控制台测试目标:SchematicModel 增删改查自测(跨平台,不链接 wx)
+#   ./build/model_test        (Windows 上是 build\model_test.exe)
+# ---------------------------------------------------------------------------
+add_executable(model_test tests/model_test.cpp
+    src/model/schematic_model.cpp
+    src/components/component_library.cpp)
