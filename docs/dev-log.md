@@ -57,6 +57,7 @@
 
 - A:
 - B:阶段二(只读画布渲染)完成 —— `CanvasPanel` 从占位面板改成 `wxPanel` 自绘:`wxAutoBufferedPaintDC` 双缓冲 + `OnPaint` 里"网格 → 导线 → 元件"分层绘制;网格 20 逻辑像素、每 5 格一条粗线;按 C 的 `pinTemplate` relPos(±50)画 4 个假元件(SW1/SW2/U1(AND)/LED1:矩形 + 引脚短线 + 引脚名)与 3 条假导线;逻辑坐标↔屏幕像素换算集中在 `ToScreen()`/`ToLogical()`,阶段三命中检测直接复用。`cmake --build build --clean-first --target CircuitEditor` 干净重建 0 warning/0 error;实跑截图核对网格、元件符号、导线与三栏布局,阶段二 4 项通过(见 test-plan T-08)。未做:元件库点击放置、鼠标交互、真实数据接入(阶段三/四)。
+- B:阶段三(交互与布线核心)完成 —— `CanvasPanel` 加交互状态机(`Idle / DraggingComponent / DrawingWire`)与命中检测(优先级 引脚 → 元件 → 导线;引脚半径 8、导线容差 4、吸附步长 20,均为逻辑坐标);元件拖拽实时跟随、抬起提交、单击不产生位移、Esc 还原;引脚到引脚橡皮筋连线,校验规则与 A 的 `addWire` 对齐(自环 / 输出直连 / 重复连线正反都算);选中态用蓝色外框、引脚悬停与吸附用橙色实心点、选中导线加粗变蓝;新增 `SetStatusCallback`,把"选中 / 拖拽中 / 连线中 / 失败原因"回写状态栏(补掉阶段一遗留的"状态栏随操作更新")。三个写入口 `MoveComponentTo / CanConnect / AddWire` 已标注阶段四替换点(`model.moveElement / model.addWire`)。验证:`cmake --build build --clean-first --target CircuitEditor` 0 warning;test-plan T-09 机器化核对 12/12 通过。未做:接入 `SchematicModel`(阶段四)、按类型画真符号。
 - C:
 - D:
 
@@ -64,4 +65,5 @@
 
 > 卡住的写这里:哪个文件、什么现象、想找谁。
 
-- 全量构建(`cmake --build build -j` 即 `./build.sh`)在 Linux 上被测试目标打断:`tests/main_test.cpp:5` 直接 `#include <windows.h>` 并调 `SetConsoleOutputCP`,而 D 的 `sim_test` 目标进了默认 `all`,报 `fatal error: windows.h: No such file or directory`。绕行:加 `--target CircuitEditor`。建议 D 加 `#ifdef _WIN32` 守卫,或给 `sim_test` 加 `EXCLUDE_FROM_ALL`(细节见群里的 review 意见)。
+- 全量构建(`cmake --build build -j` 即 `./build.sh`)在 Linux 上被测试目标打断:`tests/main_test.cpp:5` 直接 `#include <windows.h>` 并调 `SetConsoleOutputCP`,而 D 的 `sim_test` 目标进了默认 `all`,报 `fatal error: windows.h: No such file or directory`。绕行:加 `--target CircuitEditor`。建议 D 加 `#ifdef _WIN32` 守卫,或给 `sim_test` 加 `EXCLUDE_FROM_ALL`。→ **已修**(commit `9e6e58d`,加平台守卫):Linux 全量构建 0 warning,`./build/sim_test` 与门真值表 4/4 PASS。
+- **给全组的提醒:本机(Wayland + Xwayland)下 XTest 注入鼠标无效** —— 指针 warp 不生效、点击也投递不到 X 客户端,自动化点击验证会静默失败。可行做法:用 `XWarpPointer` 移动指针,或直接向 wx 事件系统注入 `wxMouseEvent`(B 的阶段三验证用的是后者:窗口与渲染都是真的,只绕过 X 输入层)。
