@@ -24,13 +24,13 @@
 
 ## C — 元件库(src/components)
 
-- [ ] C1 实现 `ComponentLibrary`:types() / displayName() / pinTemplate()。先做 AND、OR、NOT、SWITCH、LED 五个。
-- [ ] C2 确定各元件外观与引脚相对坐标(relPos),供 B 画符号与命中检测用(可先用矩形 + 引脚占位)。
+- [x] C1 实现 `ComponentLibrary`:types() / displayName() / pinTemplate()。先做 AND、OR、NOT、SWITCH、LED 五个。
+- [ ] C2 确定各元件外观与引脚相对坐标(relPos),供 B 画符号与命中检测用。**relPos 已定**(见 docs/interfaces.md 的引脚对齐表);外观尺寸待与 B 确认。
 - [ ] C3 自定义元件(任务 3 要求):用 JSON 文件描述元件,读取后进库(选做)。
 
 ## D — 仿真(src/simulation)
 
-- [ ] D1 组合电路传播:给定输入,输出沿拓扑稳定。核对:test-plan T-06/T-07。
+- [x] D1 组合电路传播:给定输入,输出沿拓扑稳定。**AND 已实现并跑通与门真值表 4 组**(OR / NOT 待补)。核对:test-plan T-06/T-07。
 - [ ] D2 事件队列:输入变化 → 受影响网络 → 依次更新输出 → 回调 UI。
 - [ ] D3 环路 / 振荡检测(选做):识别组合环并报告。
 - [ ] D4 时序元件(选做):D 触发器、时钟。

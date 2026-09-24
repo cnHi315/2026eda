@@ -2,8 +2,8 @@
 
 类 Logisim 的数字逻辑电路设计与仿真工具(C++17 + wxWidgets)。
 
-> 当前状态:**阶段 0 收尾**。整条编译链已验证(能弹出主窗口)。
-> 下一步:其余三人配好环境,然后按分工各自开工。
+> 当前状态:**第 2 周 —— 数据落地**。编译链已通、三栏骨架能弹窗;`addWire` + net 规则、`ComponentLibrary` 引脚模板、`Simulator` 与门传播都已完成。
+> 每周分工看 [docs/dev-log.md](docs/dev-log.md),各模块待办看 [docs/BACKEND_TODO.md](docs/BACKEND_TODO.md)。
 
 ---
 
