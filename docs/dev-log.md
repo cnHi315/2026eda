@@ -65,5 +65,23 @@
 
 > 卡住的写这里:哪个文件、什么现象、想找谁。
 
-- 全量构建(`cmake --build build -j` 即 `./build.sh`)在 Linux 上被测试目标打断:`tests/main_test.cpp:5` 直接 `#include <windows.h>` 并调 `SetConsoleOutputCP`,而 D 的 `sim_test` 目标进了默认 `all`,报 `fatal error: windows.h: No such file or directory`。绕行:加 `--target CircuitEditor`。建议 D 加 `#ifdef _WIN32` 守卫,或给 `sim_test` 加 `EXCLUDE_FROM_ALL`。→ **已修**(commit `9e6e58d`,加平台守卫):Linux 全量构建 0 warning,`./build/sim_test` 与门真值表 4/4 PASS。
-- **给全组的提醒:本机(Wayland + Xwayland)下 XTest 注入鼠标无效** —— 指针 warp 不生效、点击也投递不到 X 客户端,自动化点击验证会静默失败。可行做法:用 `XWarpPointer` 移动指针,或直接向 wx 事件系统注入 `wxMouseEvent`(B 的阶段三验证用的是后者:窗口与渲染都是真的,只绕过 X 输入层)。
+**B 与其他负责人后续对接的潜在问题**
+
+- **与 A(数据模型 / 文件)**
+  - `addElement / moveElement / removeElement / removeWire` 与 `NetlistIO(save/load/exportNetlist)` 尚未实现,阶段四"从元件库放置元件、拖拽回写、删除、保存/打开/导出网表"无法联调;目前菜单只有 `File → Exit`。
+  - `addWire` 失败语义要统一:阶段三 `CanConnect()` 已按 data-model.md 实现四道校验(自环 / 输出直连 / 重复连线正反都算),阶段四换成 `model.addWire` 后必须同一套规则;现在失败只返回空串,UI 拿不到原因,建议返回失败原因,或约定"UI 先自查、只把成功路径交给 model"。
+  - `SchematicModel` 没有变更通知/脏标记,B 只能每次操作整幅重绘;若 A 后续加缓存或信号机制,请先约定接口。
+  - id 稳定性:选中态、导线端点、拖拽都按 `componentId + pinIndex` 索引,`load()` 后 id 必须保持不变(JSON 往返),否则选中态与导线会失效。
+  - 契约 `data_model.h` 按 README 新约定"要改先问人":阶段四若需要新字段(如导线的 netId、元件显示名覆盖),要先全组同步。
+- **与 C(元件库)**
+  - **包围盒与命中参数没定死**(本周关键路径):C 给 `relPos(±50)`,B 给命中半径 8 / 导线容差 4 / 吸附步长 20。建议把"每类型包围盒宽高 + 引脚可视长度 + 命中半径"一起写进 `docs/interfaces.md`,否则阶段四画真符号时 UI 和 A 的 `addElement` 都要返工。
+  - `types()/displayName()` 还没接进 UI:左侧元件树现在写死英文类型串 `AND/OR/NOT/SWITCH/LED`,阶段四要换成 `types()` + 中文 `displayName()`;树里显示中文、画布标签显示 id,这个口径要统一(用户手册同步)。
+  - 自定义元件(任务 3 的 C3)若走 JSON 描述,UI 需要知道"外观怎么画"和"未知类型怎么兜底",否则画布只能一直画矩形。
+- **与 D(仿真)**
+  - **手势冲突要先约定**:Logisim 式"拨开关"是点一下翻转电平,而阶段三已把左键按下用于拖动/连线。建议定成"左键拖动/连线,拨开关用双击或右键",否则阶段四两套交互会抢事件。
+  - `Simulator` 目前只实现 AND(OR/NOT 未做),SWITCH/LED 也没有专门逻辑;`setSignalCallback` 的触发时机(每步 / 仅变化)、`query()` 在 `step()` 之前的语义都未定,而 B 要用它刷新导线颜色与 LED 亮灭。
+  - 导线颜色需要"引脚 → 网络 → 电平"的映射:B 侧 `Wire` 只有两端 `PinRef`,net 由 A 生成;要么 UI 读 A 的 `nets`,要么 D 的回调按引脚聚合后让 UI 反查导线。
+  - 回调频率未定:B 计划用 `RefreshRect()` 局部刷新而不是整幅重绘,需要 D 说明一次 `step()` 最多触发多少次回调。
+- **全组 / 流程**
+  - `CMakeLists.txt` 与 `data_model.h` 按新约定"要改先问人":阶段四若要把验证台/测试目标收进仓库,需要全组同意(B 的验证台现在放在仓库外)。
+  - 阶段三的命中检测依赖"包围盒 + 引脚长度 + 吸附步长"这组参数,阶段四任何一处调整都要同时改 UI 与元件库,建议第 3 周内定死。
