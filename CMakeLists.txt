@@ -43,8 +43,8 @@ set_target_properties(CircuitEditor PROPERTIES WIN32_EXECUTABLE TRUE)
 target_link_libraries(CircuitEditor ${wxWidgets_LIBRARIES})
 
 # ---------------------------------------------------------------------------
-# 控制台测试目标:运行仿真器真值表自测
+# 控制台测试目标:运行仿真器真值表自测(跨平台,不链接 wx)
 #   cmake --build build
-#   .\build\Debug\sim_test.exe
+#   ./build/sim_test          (Windows 上是 build\sim_test.exe)
 # ---------------------------------------------------------------------------
 add_executable(sim_test tests/main_test.cpp src/simulation/simulator.cpp)

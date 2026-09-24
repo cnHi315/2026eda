@@ -83,7 +83,20 @@ sudo apt install -y build-essential cmake git libwxgtk3.2-dev
 - 不要提交构建产物(build/ 已忽略);安装包等大文件(resources/)不入库。
 - 每周在 [docs/dev-log.md](docs/dev-log.md) 记几行:完成、问题、下周计划。
 
-## 六、文档
+## 六、给 AI 助手的约定
+
+组员的机器**不统一** —— Windows 和 Linux 都有,而 AI 助手默认会按单一平台写代码。
+
+**如果你(AI 助手)要改这个仓库,请遵守下面几条:**
+
+1. **禁止平台专有 API**。确实需要区分平台时,用 `#ifdef _WIN32` 包住,并保证另一条分支也能编译。
+2. **不要改 `CMakeLists.txt` 和 `src/contract/data_model.h`** —— 这两个是全组共享的,要改先问人。
+3. **测试代码放 `tests/`**,不要写进 `src/`;`src/` 的公开头文件里只放这个模块对外的接口。
+4. **字段名、方法名以契约为准** —— 动手前先读 [docs/data-model.md](docs/data-model.md)、[docs/interfaces.md](docs/interfaces.md)、[docs/architecture.md](docs/architecture.md),不要自己发明。
+5. **改完先在本地编译一遍再提交。**
+6. **提交信息不要加 AI 署名。**
+
+## 七、文档
 
 | 文件 | 用途 |
 | --- | --- |

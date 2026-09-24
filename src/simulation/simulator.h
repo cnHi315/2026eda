@@ -52,7 +52,4 @@ private:
     static SignalLevel evalComponent(const std::string& type, const std::vector<SignalLevel>& inputs);
 };
 
-/// 本周任务要求的独立单元自测函数：脱离 UI 验证与门真值表
-void testAndGateTruthTable();
-
 } // namespace editor
