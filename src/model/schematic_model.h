@@ -27,8 +27,7 @@ public:
     /// 拓扑约束:不允许两个输出引脚直连;同一条线不能重复(两个端点相同,正反都算)。
     std::string addWire(PinRef from, PinRef to);
 
-    /// 删掉一条导线,成功返回 true;找不到该 id 返回 false。
-    /// 参数是 Wire::id,不是网络 id。删完之后 nets 会整体重算(见 docs/data-model.md)。
+    /// 删掉一条导线(参数是 Wire::id,不是网络 id),成功返回 true。
     bool removeWire(const std::string& wireId);
 
     /// 按 id 查找元件;不存在返回 nullptr。

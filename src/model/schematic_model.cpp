@@ -8,8 +8,7 @@ namespace editor {
 
 namespace {
 
-// 元件 id 的前缀(见 docs/data-model.md 的 "U1"、"SW1"、"LED1")。
-// 没列在这里的新类型会退化成用类型名本身当前缀,所以 C 加元件不必等这边改。
+// 元件 id 前缀(见 docs/data-model.md)。没列出的新类型用类型名本身,不必等这边改。
 std::string typePrefix(const std::string& type) {
     if (type == "AND" || type == "OR" || type == "NOT") return "U";
     if (type == "SWITCH") return "SW";
@@ -33,15 +32,14 @@ std::string SchematicModel::addElement(const std::string& type, Point pos) {
     comp.pos  = pos;
     comp.pins = pins;
     comp.id   = newComponentId(type);
-    comp.name = comp.id;           // 显示名默认和 id 一样,用户改名时再覆盖
+    comp.name = comp.id;           // 显示名默认等于 id
 
     schematic_.components.push_back(comp);
-    // 新元件还没接线,nets 不受影响,不用重算
-    return comp.id;
+    return comp.id;                // 新元件还没接线,nets 不受影响
 }
 
 bool SchematicModel::removeElement(const std::string& id) {
-    // 1. 先找到并删掉元件本身
+    // 1. 删掉元件本身
     int idx = -1;
     for (int i = 0; i < (int)schematic_.components.size(); ++i) {
         if (schematic_.components[i].id == id) { idx = i; break; }
@@ -49,7 +47,7 @@ bool SchematicModel::removeElement(const std::string& id) {
     if (idx == -1) return false;
     schematic_.components.erase(schematic_.components.begin() + idx);
 
-    // 2. 把挂在这个元件上的导线一并删掉(任一端是它就算)
+    // 2. 把挂在它上面的导线一并删掉(任一端是它就算)
     std::vector<Wire> keep;
     for (const Wire& wire : schematic_.wires) {
         if (wire.from.componentId != id && wire.to.componentId != id)
@@ -57,7 +55,7 @@ bool SchematicModel::removeElement(const std::string& id) {
     }
     schematic_.wires.swap(keep);
 
-    // 3. 连接关系变了,nets 要重算
+    // 3. 连接关系变了,nets 重算
     rebuildNets();
     return true;
 }
@@ -209,13 +207,13 @@ std::string SchematicModel::newWireId(){
     }
 }
 
-// 从 wires_ 重新推导 nets_:把每条线当成一条边,求连通分量,每个分量合成一个网络。
-// 删线 / 删元件之后调用,保证"两个引脚相连 ⟺ 在同一个网络里"。
+// 从 wires_ 重新推导 nets_:每条线是一条边,求连通分量,每个分量合成一个网络。
+// 删线 / 删元件之后调用,保证"两引脚相连 ⟺ 在同一网络"。
 void SchematicModel::rebuildNets(){
     schematic_.nets.clear();
     if (schematic_.wires.empty()) return;
 
-    // 1. 每条线把它的两个端点并进同一组。groups 的每个元素是一组互连的引脚。
+    // 1. 每条线把两个端点并进同一组;groups 的每个元素是一组互连引脚。
     std::vector<std::vector<PinRef>> groups;
     for (const Wire& wire : schematic_.wires){
         // 看两个端点各自落在哪一组(没出现过就是 -1)

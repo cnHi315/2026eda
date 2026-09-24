@@ -9,10 +9,10 @@
 | --- | --- |
 | `const Schematic& data() const` | 只读访问全部数据(UI 渲染用) |
 | `std::string addElement(type, Point)` | 放新元件,返回 id;失败返回空串 |
-| `bool removeElement(id)` | 删除元件,连带删掉它引脚上的导线;nets 自动重算 |
-| `bool moveElement(id, Point)` | 移动元件(只改坐标,连接关系不变,nets 不动) |
+| `bool removeElement(id)` | 删除元件,连带删掉它引脚上的导线 |
+| `bool moveElement(id, Point)` | 移动元件(只改坐标,连接关系不变) |
 | `std::string addWire(PinRef from, PinRef to)` | 连线,返回网络 id;自动合并/新建 net(规则见 data-model.md) |
-| `bool removeWire(wireId)` | 删掉**一条**导线(不是整个网络);被拆开的 net 自动重算 |
+| `bool removeWire(wireId)` | 删掉**一条**导线(不是整个网络) |
 | `const Component* findComponent(id) const` | 找不到返回 nullptr |
 
 ## ComponentLibrary(src/components/component_library.h,负责人 C)
@@ -82,8 +82,6 @@ sim.setInput("SW1", 0, editor::SignalLevel::High);       // 打开开关
 sim.step();                                              // 传播
 ```
 
-**改完数据要重载仿真**:`Simulator::load()` 存的是原理图的**副本**,`SchematicModel` 之后再改动,它并不知道。
-UI 在每次增删元件/导线之后要重新调一次 `sim.load(model.data())`,否则仿真结果和画面对不上
-(最典型的:线删了,LED 还亮着)。
+**改完数据要重载仿真**:`Simulator::load()` 存的是副本,之后再改 model 它不知道。UI 每次增删元件/导线后要重调 `sim.load(model.data())`,否则线删了 LED 还亮着。
 
 > 约定:改任何签名前先在群里说一声,并更新本文档。
