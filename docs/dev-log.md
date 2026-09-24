@@ -58,7 +58,7 @@
 - A:
 - B:阶段二(只读画布渲染)完成 —— `CanvasPanel` 从占位面板改成 `wxPanel` 自绘:`wxAutoBufferedPaintDC` 双缓冲 + `OnPaint` 里"网格 → 导线 → 元件"分层绘制;网格 20 逻辑像素、每 5 格一条粗线;按 C 的 `pinTemplate` relPos(±50)画 4 个假元件(SW1/SW2/U1(AND)/LED1:矩形 + 引脚短线 + 引脚名)与 3 条假导线;逻辑坐标↔屏幕像素换算集中在 `ToScreen()`/`ToLogical()`,阶段三命中检测直接复用。`cmake --build build --clean-first --target CircuitEditor` 干净重建 0 warning/0 error;实跑截图核对网格、元件符号、导线与三栏布局,阶段二 4 项通过(见 test-plan T-08)。未做:元件库点击放置、鼠标交互、真实数据接入(阶段三/四)。
 - C:
-- D:
+- D:后端模拟核心与测试闭环完成 —— `Simulator` 实现组合逻辑两步迭代传播，支持 **AND、OR、NOT** 基础门电路；完善 `load()`、`setInput()`、`query()` 及带 **OnChange 防抖优化**（电平变化才触发）的 `setSignalCallback` 机制；完成 `sim_test` 编译及真值表全功能单元测试。未做：与 A 模块网表动态数据的全链路合体联调（接口已备好，交由 A 侧推进）。
 
 ### 第 2 周问题
 
