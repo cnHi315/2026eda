@@ -41,13 +41,17 @@ void UiMainFrame::BuildToolBar() {
 
 void UiMainFrame::BuildStatusBar() {
     CreateStatusBar();
-    SetStatusText("Ready");
+    SetStatusText(wxString::FromUTF8("就绪 —— 拖动元件,或从引脚拖出连线"));
 }
 
 void UiMainFrame::BuildLayout() {
     m_palette = new ComponentPalette(this);
     m_canvas = new CanvasPanel(this);
     m_props = new PropertyPanel(this);
+
+    // 阶段三:画布的交互状态(选中 / 拖拽中 / 连线中)回写到状态栏。
+    m_canvas->SetStatusCallback(
+        [this](const wxString& text) { SetStatusText(text); });
 
     // 左/右固定宽度,中栏占满剩余空间
     auto* sizer = new wxBoxSizer(wxHORIZONTAL);
