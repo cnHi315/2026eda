@@ -56,7 +56,7 @@
 > 周末回填,没做完就写做到哪了。
 
 - A:
-- B:
+- B:阶段二(只读画布渲染)完成 —— `CanvasPanel` 从占位面板改成 `wxPanel` 自绘:`wxAutoBufferedPaintDC` 双缓冲 + `OnPaint` 里"网格 → 导线 → 元件"分层绘制;网格 20 逻辑像素、每 5 格一条粗线;按 C 的 `pinTemplate` relPos(±50)画 4 个假元件(SW1/SW2/U1(AND)/LED1:矩形 + 引脚短线 + 引脚名)与 3 条假导线;逻辑坐标↔屏幕像素换算集中在 `ToScreen()`/`ToLogical()`,阶段三命中检测直接复用。`cmake --build build --clean-first --target CircuitEditor` 干净重建 0 warning/0 error;实跑截图核对网格、元件符号、导线与三栏布局,阶段二 4 项通过(见 test-plan T-08)。未做:元件库点击放置、鼠标交互、真实数据接入(阶段三/四)。
 - C:
 - D:
 
@@ -64,4 +64,4 @@
 
 > 卡住的写这里:哪个文件、什么现象、想找谁。
 
--
+- 全量构建(`cmake --build build -j` 即 `./build.sh`)在 Linux 上被测试目标打断:`tests/main_test.cpp:5` 直接 `#include <windows.h>` 并调 `SetConsoleOutputCP`,而 D 的 `sim_test` 目标进了默认 `all`,报 `fatal error: windows.h: No such file or directory`。绕行:加 `--target CircuitEditor`。建议 D 加 `#ifdef _WIN32` 守卫,或给 `sim_test` 加 `EXCLUDE_FROM_ALL`(细节见群里的 review 意见)。

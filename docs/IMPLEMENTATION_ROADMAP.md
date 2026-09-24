@@ -19,10 +19,10 @@
 
 ## 阶段二:只读画布渲染
 
-- [ ] 画布容器(自定义 wxPanel / wxScrolledWindow,接入 OnPaint)
-- [ ] wxPaintDC 绘制网格背景
-- [ ] 绘制假元件(矩形 + 引脚占位)
-- [ ] 绘制假导线
+- [x] 画布容器(自定义 wxPanel / wxScrolledWindow,接入 OnPaint)
+- [x] wxPaintDC 绘制网格背景
+- [x] 绘制假元件(矩形 + 引脚占位)
+- [x] 绘制假导线
 
 ## 阶段三:交互与布线核心
 
