@@ -1,12 +1,15 @@
-// 仿真器单元自测的独立控制台入口。
-// 运行: .\build\Debug\sim_test.exe
+// 仿真器单元自测的独立控制台入口(负责人 D)。
+// Windows: .\build\Debug\sim_test.exe  |  Linux: ./build/sim_test
 #include "simulation/simulator.h"
 
-#include <windows.h>
+#if defined(_WIN32)
+#include <windows.h>   // SetConsoleOutputCP
+#endif
 
 int main() {
-    // 让 Windows 终端按 UTF-8 解码 stdout,配合 /utf-8 编译选项解决中文乱码。
-    SetConsoleOutputCP(CP_UTF8);
+#if defined(_WIN32)
+    SetConsoleOutputCP(CP_UTF8);   // Windows 终端按 UTF-8 解码 stdout
+#endif
 
     editor::testAndGateTruthTable();
     return 0;
