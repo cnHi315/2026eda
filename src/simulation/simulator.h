@@ -45,10 +45,10 @@ private:
     /// 生成查找 Key
     static std::string makeKey(const std::string& compId, int pinIndex);
 
-    /// 更新引脚电平并触发回调
+    /// 更新引脚电平并触发回调（预留：当前 step() 内用 lambda 实现，后续可抽至此处）
     void setPinLevel(const std::string& compId, int pinIndex, SignalLevel level, bool& changed);
 
-    /// 根据元件类型和输入引脚电平计算输出
+    /// 根据元件类型和输入引脚电平计算输出（预留：当前 step() 内用 if-else 实现，后续可抽至此处）
     static SignalLevel evalComponent(const std::string& type, const std::vector<SignalLevel>& inputs);
 };
 
