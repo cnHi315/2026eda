@@ -103,7 +103,7 @@
 ### 第 4 周计划
 
 - **A**:`NetlistIO` —— `save` / `load`(JSON 往返,id 保持不变)/ `exportNetlist`。引入 nlohmann/json 单头文件到 `src/io/`;导出格式先照着 KiCad 的网表研究。加一个 `io_test` 目标(照 `sim_test` / `model_test` 的写法)。另外牵头把 SWITCH/LED 的引脚模型定下来(见下面的硬阻塞)。
-- **B**:**阶段四** —— 删掉 `m_demo` 假数据,`OnPaint` 改读 `model.data()`;三个写入口 `MoveComponentTo / CanConnect / AddWire` 换成 `model.moveElement / model.addWire`,再加"元件树点击放置 → `model.addElement`";接 `setSignalCallback` 刷新导线颜色与 LED。**全项目第一次真数据上屏**。前置:C 的符号尺寸。
+- **B**:**阶段四(全项目第一次真数据上屏)** —— 删掉 `m_demo` 假数据,`OnPaint` 改读 `model.data()`;`MoveComponentTo / CanConnect / AddWire` 换成 `model.moveElement / model.addWire`;新增"元件树点击放置 → `model.addElement`"与 Delete → `model.removeElement`;接 `setSignalCallback` 刷新导线颜色与 LED;文件菜单接 A 已交付的 `NetlistIO`(`save` / `load` / `loadFrom` / `exportNetlist`)。**几何参数不再等 C**:包围盒 60×40、引脚可视长度 20、引脚命中半径 8、导线命中容差 4、吸附步长 20 由 B 定为 v1(与 C 的 relPos ±50 自洽,50 = 30 + 20),评审通过后补进 `docs/interfaces.md`,C 只需追认、**不需要改 C 的代码**;元件外观 v1 一律"矩形 + 引脚名",真符号(弧 / 圆圈 / 拨杆)留 v1.1。SWITCH/LED 引脚模型未定**不阻塞**:UI 拨开关时对该元件的所有引脚置同一电平。
 - **C**:
   - ① **和 B 把符号尺寸定死** —— 上周的关键路径,没做完。包围盒宽高 / 引脚可视长度 / 命中半径 / 吸附步长,一并写进 `docs/interfaces.md` 的引脚对齐表旁边。定不下来,B 的画布和 A 的 `addElement` 都要返工。
   - ② **和 A、D 统一 SWITCH/LED 的引脚模型**(见下面的钉子)。
@@ -113,7 +113,7 @@
   - ⑥(选做)**C3 自定义元件**:用 JSON 描述元件、读取后进库。
 - **D**:`Simulator` 接真实数据 —— 用 `SchematicModel::addWire` 造一份电路喂给 `load()`,跑通 `setInput → step → query` 全链路(现在 `sim_test` 用的是手写假数据);定死 `setSignalCallback` 的触发时机与单次 `step()` 的回调上限(B 要拿它做局部刷新)。
 
-> 本周关键路径:**B 的阶段四** —— 用户看得见的东西全要经过它。它的前置是 C 的符号尺寸。
+> 本周关键路径:**B 的阶段四** —— 用户看得见的东西全要经过它。它的前置(C 的符号尺寸)已改为由 B 自行定稿、C 追认即可,不再卡人;SWITCH 引脚模型用 UI 兜底。
 > **先拔这颗钉子:SWITCH 的引脚模型对不上。** C 的 `pinTemplate("SWITCH")` 给两个引脚(`[0]="A"` 输入、`[1]="Y"` 输出);D 的 `sim_test` 却按"单引脚、pinIndex 0 就是输出"写。`model.addElement("SWITCH")` 造出来的开关有 2 个脚,`setInput("SW1", 0, …)` 会设到输入脚 `A` 上 —— 而 `A` 不在任何网络里,电平传不出去,**拨开关这个动作是死的**。
 > 建议:SWITCH 收敛成 1 个引脚(输出)、LED 收敛成 1 个引脚(输入)—— 开关是源、LED 是汇,物理上也说得通。要改 C 的 `pinTemplate`、D 的测试,和 `docs/interfaces.md` 的引脚对齐表,三方点头。
 
@@ -122,7 +122,7 @@
 > 周末回填,没做完就写做到哪了。
 
 - **A**:`NetlistIO` 完成 —— `save` / `load`(nlohmann/json 3.11.3 单头放进 `src/io/json.hpp`;JSON 往返后 id / 引脚 / 坐标全不变,坏文件不破坏原数据)、`exportNetlist`(输出 KiCad 的 s-expression 网表,Pcbnew 可导入;引脚按**名字**索引,`tstamp` 由元件 id 哈希而来,所以导出结果稳定、可 diff)。新增 `SchematicModel::loadFrom()` —— 打开文件时把读进来的原理图换进去,`nets` 一律按 `wires` 重算:文件里存的 nets 不作数,否则手改过的文件会让网络和导线对不上。新增 `tests/io_test.cpp` + `io_test` 目标,**61 项自测全过**;另写了个 Python 校验器当外援,把导出的 `.net` 当真正的 s-expression 解析、再和同一份 `.json` 交叉对照,**50/50 通过**。踩到两个只在 Windows 上出现的跨平台坑(已写进 README 第六节第 7 条):MinGW 的 `ifstream` 打开失败**不置 failbit**,`if (!in)` 失效;Windows 的 `std::rename` 目标已存在时会失败。网表格式说明写在 `src/io/netlist_io.h` 的注释里,不占 docs;`docs/interfaces.md` 只加了 `loadFrom` 一行。另外定了一条:**「保存时顺手导出网表」是 UI 层的事**(B 的保存菜单项里一次点击调 `save` + `exportNetlist` 两个函数),`io` 层保持两个独立函数 —— 需求表 F-03 / F-04 是两条独立验收项,代码里分开,答辩好指。未做:UI 侧的菜单项(属 B 的阶段四)。
-- **B**:
+- **B**:阶段四(真数据上屏)完成 —— `CanvasPanel` 改读 `SchematicModel::data()`,删掉 `m_demo` / `BuildDemoSchematic`;写操作全部走 model(`addElement / moveElement / addWire / removeWire / removeElement`),失败与非法操作在状态栏给原因;元件树改由 `ComponentLibrary::types() / displayName()` 填充(中文),选中类型 → 画布点击放置(吸附 20 栅格,支持连续放置,Esc 退出);Delete 删除选中元件/导线;双击 SWITCH 拨动电平(默认关闭,v1 不写进 JSON),每次变化 `Simulator::load(data) + setInput + step()`,导线按电平着色(高=亮绿 3px / 低=暗绿 2px / 未知=灰 2px)、LED 亮灭、开关底色变化;属性表显示选中元件(只读,含引脚表);文件菜单与工具栏接 `NetlistIO`(新建 / 打开 / 保存 / 另存为 / 导出网表),状态栏第二格实时显示"元件 / 导线 / 网络"计数。验证:全量构建 0 warning;model_test 57/57、io_test 61/61、sim_test PASS;test-plan T-10 端到端机器化核对 15/15。踩坑记录:非 ASCII 文本必须走 `U8()`(FromUTF8),窗口标题原写成窄字面量 `"Circuit Editor — "`,在这台机器的 locale 下被吞成空串,标题只剩文件名。
 - **C**:
 - **D**:
 

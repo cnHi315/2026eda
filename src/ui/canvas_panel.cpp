@@ -6,40 +6,14 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
-#include <vector>
+
+#include "model/schematic_model.h"
+#include "simulation/simulator.h"
 
 namespace {
 
 wxString U8(const char* s) {
     return wxString::FromUTF8(s);
-}
-
-editor::PinDescriptor MkPin(const char* name, editor::PinDirection dir, int x, int y) {
-    editor::PinDescriptor p;
-    p.name = name;
-    p.direction = dir;
-    p.relPos = editor::Point{x, y};
-    return p;
-}
-
-editor::Component MkComponent(const char* id, const char* type, int x, int y,
-                              std::vector<editor::PinDescriptor> pins) {
-    editor::Component c;
-    c.id = id;
-    c.type = type;
-    c.name = id;
-    c.pos = editor::Point{x, y};
-    c.pins = std::move(pins);
-    return c;
-}
-
-editor::Wire MkWire(const char* id, const char* fromId, int fromPin,
-                    const char* toId, int toPin) {
-    editor::Wire w;
-    w.id = id;
-    w.from = editor::PinRef{fromId, fromPin};
-    w.to = editor::PinRef{toId, toPin};
-    return w;
 }
 
 /// 点到线段的距离(逻辑坐标);用于导线命中检测。
@@ -65,11 +39,10 @@ CanvasPanel::CanvasPanel(wxWindow* parent)
     SetBackgroundColour(*wxWHITE);
     SetMinSize(FromDIP(wxSize(400, 300)));
 
-    m_demo = BuildDemoSchematic();          // 阶段四:改成读 SchematicModel::data()
-
     Bind(wxEVT_PAINT, &CanvasPanel::OnPaint, this);
     Bind(wxEVT_SIZE, &CanvasPanel::OnSize, this);
     Bind(wxEVT_LEFT_DOWN, &CanvasPanel::OnLeftDown, this);
+    Bind(wxEVT_LEFT_DCLICK, &CanvasPanel::OnLeftDClick, this);
     Bind(wxEVT_MOTION, &CanvasPanel::OnMotion, this);
     Bind(wxEVT_LEFT_UP, &CanvasPanel::OnLeftUp, this);
     Bind(wxEVT_LEAVE_WINDOW, &CanvasPanel::OnLeaveWindow, this);
@@ -77,14 +50,46 @@ CanvasPanel::CanvasPanel(wxWindow* parent)
     Bind(wxEVT_KEY_DOWN, &CanvasPanel::OnKeyDown, this);
 }
 
-void CanvasPanel::SetStatusCallback(StatusCallback cb) {
-    m_status = std::move(cb);
+void CanvasPanel::Attach(editor::SchematicModel* model, editor::Simulator* sim) {
+    m_model = model;
+    m_sim = sim;
 }
 
-void CanvasPanel::SetStatus(const wxString& text) {
-    if (m_status) {
-        m_status(text);
+void CanvasPanel::SetStatusCallback(StatusCallback cb) { m_status = std::move(cb); }
+void CanvasPanel::SetSelectionCallback(SelectionCallback cb) { m_onSelection = std::move(cb); }
+void CanvasPanel::SetChangedCallback(ChangedCallback cb) { m_onChanged = std::move(cb); }
+
+void CanvasPanel::SetPlacementType(const std::string& type) {
+    m_placeType = type;
+    if (!type.empty()) {
+        SetStatus(U8("放置模式:") + wxString::FromUTF8(type.c_str()) +
+                  U8(" —— 点击画布空白处放置;Esc 退出"));
     }
+    Refresh();
+}
+
+void CanvasPanel::ClearPlacementType() {
+    if (!m_placeType.empty()) {
+        m_placeType.clear();
+        SetStatus(U8("已退出放置模式"));
+        Refresh();
+    }
+}
+
+void CanvasPanel::OnDocumentReplaced() {
+    EndInteraction();
+    m_sel = HitResult{};
+    m_hover = HitResult{};
+    m_switchLevel.clear();          // 开关默认关闭,且 v1 不持久化
+    m_placeType.clear();
+    ResyncSimulation();
+    NotifySelection();
+    NotifyChanged();
+    Refresh();
+}
+
+void CanvasPanel::ResyncSimulation() {
+    ApplySwitchInputs();
 }
 
 // ---------------------------------------------------------------------------
@@ -97,13 +102,17 @@ void CanvasPanel::OnPaint(wxPaintEvent&) {
     dc.Clear();
 
     DrawGrid(dc);                                        // ① 网格在最底层
-    for (const auto& w : m_demo.wires) {                 // ② 导线
+    for (const auto& w : S().wires) {                    // ② 导线
         DrawWire(dc, w);
     }
-    for (const auto& c : m_demo.components) {            // ③ 元件压在导线之上
+    for (const auto& c : S().components) {               // ③ 元件压在导线之上
         DrawComponent(dc, c);
     }
     DrawRubberBand(dc);                                  // ④ 连线预览在最上层
+
+    if (S().components.empty()) {
+        DrawEmptyHint(dc);
+    }
 }
 
 void CanvasPanel::OnSize(wxSizeEvent& evt) {
@@ -112,7 +121,7 @@ void CanvasPanel::OnSize(wxSizeEvent& evt) {
 }
 
 void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
-    SetFocus();   // 让 Esc 这类按键事件能送到本面板
+    SetFocus();   // 让 Esc / Delete 这类按键事件能送到本面板
 
     const editor::Point p = ToLogical(evt.GetPosition());
     m_mouseLogical = p;
@@ -127,12 +136,13 @@ void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
             CaptureMouse();
         }
         SetStatus(U8("连线中 —— 拖到目标引脚,再松开;Esc 取消"));
+        NotifySelection();
         Refresh();
         return;
     }
 
     if (hit.IsComponent()) {                             // —— 拖元件 ——
-        const editor::Component* c = FindComponent(m_demo, hit.id);
+        const editor::Component* c = Find(hit.id);
         if (c == nullptr) {
             return;
         }
@@ -146,17 +156,44 @@ void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
             CaptureMouse();
         }
         SetStatus(U8("拖动 ") + wxString::FromUTF8(hit.id.c_str()));
+        NotifySelection();
         Refresh();
         return;
     }
 
-    m_sel = hit;                                         // —— 选中导线 / 点空白清空 ——
-    if (hit.IsWire()) {
+    if (hit.IsWire()) {                                  // —— 选中导线 ——
+        m_sel = hit;
         SetStatus(U8("选中导线 ") + wxString::FromUTF8(hit.id.c_str()));
-    } else {
-        SetStatus(U8("就绪 —— 拖动元件,或从引脚拖出连线"));
+        NotifySelection();
+        Refresh();
+        return;
     }
+
+    if (!m_placeType.empty()) {                          // —— 放置元件 ——
+        PlaceAt(p);
+        return;
+    }
+
+    m_sel = HitResult{};                                 // —— 点空白:清空选中 ——
+    SetStatus(U8("就绪 —— 拖动元件,或从引脚拖出连线"));
+    NotifySelection();
     Refresh();
+}
+
+void CanvasPanel::OnLeftDClick(wxMouseEvent& evt) {
+    if (m_mode != Mode::Idle) {
+        evt.Skip();
+        return;
+    }
+    const HitResult hit = HitTest(ToLogical(evt.GetPosition()));
+    if (hit.IsComponent() || hit.IsPin()) {
+        const editor::Component* c = Find(hit.id);
+        if (c != nullptr && IsSwitch(*c)) {
+            ToggleSwitch(hit.id);                        // 双击开关 = 拨动
+            return;
+        }
+    }
+    evt.Skip();
 }
 
 void CanvasPanel::OnMotion(wxMouseEvent& evt) {
@@ -209,7 +246,7 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
         if (m_dragMoved) {
             const editor::Point target =
                 SnapToGrid(editor::Point{p.x - m_dragGrab.x, p.y - m_dragGrab.y});
-            MoveComponentTo(id, target);                 // 抬起提交(阶段四 → model.moveElement)
+            MoveComponentTo(id, target);                 // model.moveElement
             SetStatus(U8("放下 ") + wxString::FromUTF8(id.c_str()) + U8(" 位置:(") +
                       wxString::Format("%d,%d", target.x, target.y) + U8(")"));
         } else {
@@ -223,11 +260,15 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
 
     if (m_mode == Mode::DrawingWire) {
         const HitResult hit = HitTestPin(p);
-        if (hit.IsPin()) {
+        const bool samePin = hit.IsPin() && hit.id == m_wireFrom.componentId &&
+                             hit.pinIndex == m_wireFrom.pinIndex;
+        if (samePin) {
+            SetStatus(U8("已取消连线"));                  // 原地按放(含双击误触)不算错误
+        } else if (hit.IsPin()) {
             const editor::PinRef to{hit.id, hit.pinIndex};
             wxString reason;
             if (CanConnect(m_wireFrom, to, &reason)) {
-                AddWire(m_wireFrom, to);                 // 阶段四 → model.addWire
+                AddWire(m_wireFrom, to);                 // model.addWire
             } else {
                 SetStatus(U8("连线未创建:") + reason);
             }
@@ -259,31 +300,232 @@ void CanvasPanel::OnCaptureLost(wxMouseCaptureLostEvent&) {
 }
 
 void CanvasPanel::OnKeyDown(wxKeyEvent& evt) {
-    if (evt.GetKeyCode() == WXK_ESCAPE && m_mode != Mode::Idle) {
+    const int code = evt.GetKeyCode();
+
+    if (code == WXK_ESCAPE) {
         if (m_mode == Mode::DraggingComponent) {
             MoveComponentTo(m_dragId, m_dragOrig);       // Esc:把元件放回原位
             CancelInteraction(U8("已取消拖动(位置已还原)"));
-        } else {
-            CancelInteraction(U8("已取消连线"));
+            Refresh();
+            return;
         }
-        Refresh();
+        if (m_mode == Mode::DrawingWire) {
+            CancelInteraction(U8("已取消连线"));
+            Refresh();
+            return;
+        }
+        if (!m_placeType.empty()) {
+            ClearPlacementType();
+            return;
+        }
+    }
+
+    if (code == WXK_DELETE || code == WXK_NUMPAD_DELETE) {
+        DeleteSelection();
         return;
     }
+
     evt.Skip();
 }
 
-void CanvasPanel::EndInteraction() {
-    if (HasCapture()) {
-        ReleaseMouse();
+// ---------------------------------------------------------------------------
+// 写操作(全部走 SchematicModel)
+// ---------------------------------------------------------------------------
+
+bool CanvasPanel::PlaceAt(const editor::Point& logical) {
+    if (m_model == nullptr || m_placeType.empty()) {
+        return false;
     }
-    m_mode = Mode::Idle;
-    m_dragId.clear();
-    m_wireSnap = HitResult{};
+    const editor::Point pos = SnapToGrid(logical);
+    const std::string id = m_model->addElement(m_placeType, pos);
+    if (id.empty()) {
+        SetStatus(U8("放置失败:未知元件类型 ") + wxString::FromUTF8(m_placeType.c_str()));
+        return false;
+    }
+
+    ResyncSimulation();
+    HitResult sel;
+    sel.kind = HitKind::Component;
+    sel.id = id;
+    m_sel = sel;
+    SetStatus(U8("已放置 ") + wxString::FromUTF8(id.c_str()) + U8("(") +
+              wxString::FromUTF8(m_placeType.c_str()) + U8(") 位置:(") +
+              wxString::Format("%d,%d", pos.x, pos.y) + U8(")"));
+    NotifySelection();
+    NotifyChanged();
+    Refresh();
+    return true;
 }
 
-void CanvasPanel::CancelInteraction(const wxString& status) {
-    EndInteraction();
-    SetStatus(status);
+void CanvasPanel::MoveComponentTo(const std::string& id, const editor::Point& pos) {
+    if (m_model == nullptr) {
+        return;
+    }
+    const editor::Component* before = Find(id);
+    if (before != nullptr && before->pos.x == pos.x && before->pos.y == pos.y) {
+        return;                                          // 没变就不动,省一次重绘
+    }
+    if (m_model->moveElement(id, pos)) {
+        NotifyChanged();
+    }
+}
+
+bool CanvasPanel::CanConnect(const editor::PinRef& from, const editor::PinRef& to,
+                             wxString* reason) const {
+    // 与 A 的 SchematicModel::addWire 同一套规则(见 docs/data-model.md),
+    // 这里只负责给出"为什么不行"的文案;真正的写入仍然交给 model。
+    editor::Point a;
+    editor::Point b;
+    if (!PinRefLogicalPos(from, &a) || !PinRefLogicalPos(to, &b)) {
+        *reason = U8("引脚不存在");
+        return false;
+    }
+    if (from.componentId == to.componentId && from.pinIndex == to.pinIndex) {
+        *reason = U8("不能连到同一个引脚(自环)");
+        return false;
+    }
+    const editor::Component* ca = Find(from.componentId);
+    const editor::Component* cb = Find(to.componentId);
+    if (ca != nullptr && cb != nullptr &&
+        IsOutputPin(*ca, from.pinIndex) && IsOutputPin(*cb, to.pinIndex)) {
+        *reason = U8("不允许两个输出引脚直连");
+        return false;
+    }
+    for (const auto& w : S().wires) {
+        const bool same = w.from.componentId == from.componentId &&
+                          w.from.pinIndex == from.pinIndex &&
+                          w.to.componentId == to.componentId &&
+                          w.to.pinIndex == to.pinIndex;
+        const bool reversed = w.from.componentId == to.componentId &&
+                              w.from.pinIndex == to.pinIndex &&
+                              w.to.componentId == from.componentId &&
+                              w.to.pinIndex == from.pinIndex;
+        if (same || reversed) {
+            *reason = U8("这条连线已存在");
+            return false;
+        }
+    }
+    return true;
+}
+
+void CanvasPanel::AddWire(const editor::PinRef& from, const editor::PinRef& to) {
+    if (m_model == nullptr) {
+        return;
+    }
+    const std::string netId = m_model->addWire(from, to);
+    if (netId.empty()) {
+        SetStatus(U8("连线未创建:模型拒绝了这条连线"));
+        return;
+    }
+
+    ResyncSimulation();
+    HitResult sel;                                       // 选中刚加的线,给个反馈
+    sel.kind = HitKind::Wire;
+    for (const auto& w : S().wires) {
+        if ((w.from.componentId == from.componentId && w.from.pinIndex == from.pinIndex &&
+             w.to.componentId == to.componentId && w.to.pinIndex == to.pinIndex) ||
+            (w.from.componentId == to.componentId && w.from.pinIndex == to.pinIndex &&
+             w.to.componentId == from.componentId && w.to.pinIndex == from.pinIndex)) {
+            sel.id = w.id;
+            break;
+        }
+    }
+    m_sel = sel.id.empty() ? HitResult{} : sel;
+    SetStatus(U8("已连线 ") + wxString::FromUTF8(from.componentId.c_str()) +
+              wxString::Format("#%d", from.pinIndex) + U8(" → ") +
+              wxString::FromUTF8(to.componentId.c_str()) +
+              wxString::Format("#%d", to.pinIndex) + U8("  网络:") +
+              wxString::FromUTF8(netId.c_str()));
+    NotifySelection();
+    NotifyChanged();
+}
+
+void CanvasPanel::ToggleSwitch(const std::string& id) {
+    const editor::SignalLevel next =
+        (SwitchLevel(id) == editor::SignalLevel::High) ? editor::SignalLevel::Low
+                                                       : editor::SignalLevel::High;
+    m_switchLevel[id] = next;
+    ApplySwitchInputs();
+    SetStatus(U8("开关 ") + wxString::FromUTF8(id.c_str()) +
+              (next == editor::SignalLevel::High ? U8(" 打开(1)") : U8(" 关闭(0)")));
+    NotifyChanged();
+    Refresh();
+}
+
+bool CanvasPanel::DeleteSelection() {
+    if (m_model == nullptr) {
+        return false;
+    }
+    if (m_sel.IsComponent() || m_sel.IsPin()) {
+        const std::string id = m_sel.id;
+        if (m_model->removeElement(id)) {
+            m_switchLevel.erase(id);
+            m_sel = HitResult{};
+            ResyncSimulation();
+            SetStatus(U8("已删除元件 ") + wxString::FromUTF8(id.c_str()));
+            NotifySelection();
+            NotifyChanged();
+            Refresh();
+            return true;
+        }
+        SetStatus(U8("删除失败:") + wxString::FromUTF8(id.c_str()));
+        return false;
+    }
+    if (m_sel.IsWire()) {
+        const std::string id = m_sel.id;
+        if (m_model->removeWire(id)) {
+            m_sel = HitResult{};
+            ResyncSimulation();
+            SetStatus(U8("已删除导线 ") + wxString::FromUTF8(id.c_str()));
+            NotifySelection();
+            NotifyChanged();
+            Refresh();
+            return true;
+        }
+        SetStatus(U8("删除失败:") + wxString::FromUTF8(id.c_str()));
+        return false;
+    }
+    SetStatus(U8("没有选中任何对象"));
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// 仿真辅助
+// ---------------------------------------------------------------------------
+
+editor::SignalLevel CanvasPanel::SwitchLevel(const std::string& id) const {
+    const auto it = m_switchLevel.find(id);
+    return it == m_switchLevel.end() ? editor::SignalLevel::Low : it->second;
+}
+
+void CanvasPanel::ApplySwitchInputs() {
+    if (m_model == nullptr || m_sim == nullptr) {
+        return;
+    }
+    // model data → simulator;再把每个开关的当前挡位重放一遍(默认关闭)。
+    m_sim->load(m_model->data());
+    for (const auto& c : m_model->data().components) {
+        if (!IsSwitch(c)) {
+            continue;
+        }
+        const editor::SignalLevel lv = SwitchLevel(c.id);
+        for (size_t i = 0; i < c.pins.size(); ++i) {     // 单脚/两脚模型都兼容
+            m_sim->setInput(c.id, static_cast<int>(i), lv);
+        }
+    }
+    m_sim->step();
+}
+
+editor::SignalLevel CanvasPanel::PinLevel(const editor::PinRef& pin) const {
+    if (m_sim == nullptr) {
+        return editor::SignalLevel::Undefined;
+    }
+    return m_sim->query(pin.componentId, pin.pinIndex);
+}
+
+editor::SignalLevel CanvasPanel::WireLevel(const editor::Wire& w) const {
+    const editor::SignalLevel from = PinLevel(w.from);
+    return from != editor::SignalLevel::Undefined ? from : PinLevel(w.to);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +548,7 @@ CanvasPanel::HitResult CanvasPanel::HitTestPin(const editor::Point& logical) con
     HitResult best;
     double bestDist = static_cast<double>(kPinHitR);
 
-    for (const auto& c : m_demo.components) {
+    for (const auto& c : S().components) {
         for (size_t i = 0; i < c.pins.size(); ++i) {
             const editor::Point abs{c.pos.x + c.pins[i].relPos.x,
                                     c.pos.y + c.pins[i].relPos.y};
@@ -323,7 +565,7 @@ CanvasPanel::HitResult CanvasPanel::HitTestPin(const editor::Point& logical) con
 }
 
 CanvasPanel::HitResult CanvasPanel::HitTestComponent(const editor::Point& logical) const {
-    for (const auto& c : m_demo.components) {
+    for (const auto& c : S().components) {
         const SymbolSize sz = SizeOf(c.type);
         const int hw = sz.w / 2;
         const int hh = sz.h / 2;
@@ -339,7 +581,7 @@ CanvasPanel::HitResult CanvasPanel::HitTestComponent(const editor::Point& logica
 }
 
 CanvasPanel::HitResult CanvasPanel::HitTestWire(const editor::Point& logical) const {
-    for (const auto& w : m_demo.wires) {
+    for (const auto& w : S().wires) {
         editor::Point a;
         editor::Point b;
         if (!PinRefLogicalPos(w.from, &a) || !PinRefLogicalPos(w.to, &b)) {
@@ -356,92 +598,27 @@ CanvasPanel::HitResult CanvasPanel::HitTestWire(const editor::Point& logical) co
 }
 
 // ---------------------------------------------------------------------------
-// 数据写入(阶段四换成 SchematicModel 的调用)
-// ---------------------------------------------------------------------------
-
-void CanvasPanel::MoveComponentTo(const std::string& id, const editor::Point& pos) {
-    for (auto& c : m_demo.components) {
-        if (c.id == id) {
-            c.pos = pos;                                 // 阶段四 → model.moveElement(id, pos)
-            return;
-        }
-    }
-}
-
-bool CanvasPanel::CanConnect(const editor::PinRef& from, const editor::PinRef& to,
-                             wxString* reason) const {
-    // 校验规则与 A 的 SchematicModel::addWire 保持一致(见 docs/data-model.md)。
-    editor::Point a;
-    editor::Point b;
-    if (!PinRefLogicalPos(from, &a) || !PinRefLogicalPos(to, &b)) {
-        *reason = U8("引脚不存在");
-        return false;
-    }
-    if (from.componentId == to.componentId && from.pinIndex == to.pinIndex) {
-        *reason = U8("不能连到同一个引脚(自环)");
-        return false;
-    }
-    const editor::Component* ca = FindComponent(m_demo, from.componentId);
-    const editor::Component* cb = FindComponent(m_demo, to.componentId);
-    if (ca != nullptr && cb != nullptr &&
-        IsOutputPin(*ca, from.pinIndex) && IsOutputPin(*cb, to.pinIndex)) {
-        *reason = U8("不允许两个输出引脚直连");
-        return false;
-    }
-    for (const auto& w : m_demo.wires) {
-        const bool same = w.from.componentId == from.componentId &&
-                          w.from.pinIndex == from.pinIndex &&
-                          w.to.componentId == to.componentId &&
-                          w.to.pinIndex == to.pinIndex;
-        const bool reversed = w.from.componentId == to.componentId &&
-                              w.from.pinIndex == to.pinIndex &&
-                              w.to.componentId == from.componentId &&
-                              w.to.pinIndex == from.pinIndex;
-        if (same || reversed) {                          // 重复连线(正反都算)
-            *reason = U8("这条连线已存在");
-            return false;
-        }
-    }
-    return true;
-}
-
-void CanvasPanel::AddWire(const editor::PinRef& from, const editor::PinRef& to) {
-    size_t n = m_demo.wires.size() + 1;
-    std::string id = "w" + std::to_string(n);
-    while (std::any_of(m_demo.wires.begin(), m_demo.wires.end(),
-                       [&id](const editor::Wire& w) { return w.id == id; })) {
-        id = "w" + std::to_string(++n);
-    }
-
-    editor::Wire w;                                      // 阶段四 → model.addWire(from, to)
-    w.id = id;
-    w.from = from;
-    w.to = to;
-    m_demo.wires.push_back(w);
-
-    HitResult sel;                                       // 新线高亮一下,给个反馈
-    sel.kind = HitKind::Wire;
-    sel.id = id;
-    m_sel = sel;
-    SetStatus(U8("已连线 ") + wxString::FromUTF8(from.componentId.c_str()) +
-              wxString::Format("#%d", from.pinIndex) + U8(" → ") +
-              wxString::FromUTF8(to.componentId.c_str()) +
-              wxString::Format("#%d", to.pinIndex));
-}
-
-// ---------------------------------------------------------------------------
 // 几何辅助
 // ---------------------------------------------------------------------------
 
 CanvasPanel::SymbolSize CanvasPanel::SizeOf(const std::string& type) {
-    // 当前五个元件统一 60×40 + 引脚长 20 —— 与 C 的 pinTemplate relPos ±50 自洽
-    // (±50 = kSymW/2 + kPinLen)。Issue 3:与 C 定死各类型包围盒后,这里换成逐类型查表。
+    // 第 4 周定稿(见 docs/interfaces.md 几何参数表):五种类型统一 60×40 + 引脚长 20,
+    // 与 C 的 pinTemplate relPos ±50 自洽(±50 = kSymW/2 + kPinLen)。
     (void)type;
     return SymbolSize{kSymW, kSymH, kPinLen};
 }
 
+const editor::Component* CanvasPanel::Find(const std::string& id) const {
+    return m_model == nullptr ? nullptr : m_model->findComponent(id);
+}
+
+const editor::Schematic& CanvasPanel::S() const {
+    static const editor::Schematic kEmpty;
+    return m_model == nullptr ? kEmpty : m_model->data();
+}
+
 bool CanvasPanel::PinRefLogicalPos(const editor::PinRef& pin, editor::Point* out) const {
-    const editor::Component* c = FindComponent(m_demo, pin.componentId);
+    const editor::Component* c = Find(pin.componentId);
     if (c == nullptr || pin.pinIndex < 0 ||
         pin.pinIndex >= static_cast<int>(c->pins.size())) {
         return false;
@@ -464,6 +641,9 @@ bool CanvasPanel::IsOutputPin(const editor::Component& c, int pinIndex) {
     }
     return c.pins[static_cast<size_t>(pinIndex)].direction == editor::PinDirection::Output;
 }
+
+bool CanvasPanel::IsSwitch(const editor::Component& c) { return c.type == "SWITCH"; }
+bool CanvasPanel::IsLed(const editor::Component& c) { return c.type == "LED"; }
 
 // ---------------------------------------------------------------------------
 // 坐标换算
@@ -503,6 +683,22 @@ void CanvasPanel::DrawGrid(wxDC& dc) const {
     }
 }
 
+void CanvasPanel::DrawEmptyHint(wxDC& dc) const {
+    const wxSize sz = GetClientSize();
+    dc.SetTextForeground(wxColour(150, 150, 150));
+    dc.SetFont(wxFontInfo(11));
+
+    const wxString line1 = m_placeType.empty()
+                               ? U8("从左侧元件库选择元件 → 点击画布放置")
+                               : U8("放置模式:") + wxString::FromUTF8(m_placeType.c_str()) +
+                                     U8(" —— 点击画布放置;Esc 退出");
+    const wxString line2 = U8("放好元件后:从引脚拖到引脚连线;双击开关拨动电平");
+    wxSize s1 = dc.GetTextExtent(line1);
+    wxSize s2 = dc.GetTextExtent(line2);
+    dc.DrawText(line1, (sz.x - s1.x) / 2, sz.y / 2 - s1.y);
+    dc.DrawText(line2, (sz.x - s2.x) / 2, sz.y / 2 + s2.y / 2);
+}
+
 void CanvasPanel::DrawPinDot(wxDC& dc, const wxPoint& p, bool highlight) const {
     dc.SetPen(*wxTRANSPARENT_PEN);
     dc.SetBrush(highlight ? wxBrush(wxColour(230, 120, 0)) : *wxBLACK_BRUSH);
@@ -517,7 +713,7 @@ void CanvasPanel::DrawComponent(wxDC& dc, const editor::Component& c) const {
     const bool selected = m_sel.IsComponent() && m_sel.id == c.id;
     const bool hovered = m_hover.IsComponent() && m_hover.id == c.id;
 
-    // 选中/悬停:蓝色虚线外框(先画,免得盖住元件体)
+    // 选中/悬停:蓝色虚/实线外框(先画,免得盖住元件体)
     if (selected || hovered) {
         dc.SetPen(wxPen(wxColour(0, 90, 200), selected ? 2 : 1,
                         selected ? wxPENSTYLE_SOLID : wxPENSTYLE_DOT));
@@ -525,10 +721,36 @@ void CanvasPanel::DrawComponent(wxDC& dc, const editor::Component& c) const {
         dc.DrawRectangle(o.x - hw - 5, o.y - hh - 5, sz.w + 10, sz.h + 10);
     }
 
-    // 元件外形:先用统一矩形占位,阶段四再按类型画真符号
+    // 元件体:矩形占位(v1);开关/ LED 在体内画状态
+    const editor::SignalLevel lv =
+        IsSwitch(c) ? SwitchLevel(c.id)
+                    : (IsLed(c) ? PinLevel(editor::PinRef{c.id, 0})
+                                : editor::SignalLevel::Undefined);
+
+    wxBrush bodyBrush(*wxWHITE_BRUSH);
+    if (IsSwitch(c) && lv == editor::SignalLevel::High) {
+        bodyBrush = wxBrush(wxColour(212, 245, 212));    // 开关闭合:淡绿底
+    }
     dc.SetPen(wxPen(wxColour(40, 40, 40), 2));
-    dc.SetBrush(*wxWHITE_BRUSH);
+    dc.SetBrush(bodyBrush);
     dc.DrawRectangle(o.x - hw, o.y - hh, sz.w, sz.h);
+
+    if (IsSwitch(c)) {                                   // 开关:1 / 0
+        dc.SetTextForeground(lv == editor::SignalLevel::High ? wxColour(0, 140, 0)
+                                                             : wxColour(130, 130, 130));
+        dc.SetFont(wxFontInfo(10).Bold());
+        const wxString t = (lv == editor::SignalLevel::High) ? "1" : "0";
+        const wxSize ts = dc.GetTextExtent(t);
+        dc.DrawText(t, o.x - ts.x / 2, o.y - ts.y / 2);
+    } else if (IsLed(c)) {                               // LED:亮 = 实心橙圆
+        const bool on = lv == editor::SignalLevel::High;
+        dc.SetPen(wxPen(on ? wxColour(200, 110, 0) : wxColour(120, 120, 120), 2));
+        dc.SetBrush(on ? wxBrush(wxColour(255, 170, 0))
+                       : (lv == editor::SignalLevel::Undefined
+                              ? wxBrush(wxColour(225, 225, 225))
+                              : *wxWHITE_BRUSH));
+        dc.DrawCircle(o.x, o.y, 9);
+    }
 
     dc.SetFont(wxFontInfo(8));
     for (size_t i = 0; i < c.pins.size(); ++i) {
@@ -536,7 +758,6 @@ void CanvasPanel::DrawComponent(wxDC& dc, const editor::Component& c) const {
         const editor::Point abs{c.pos.x + pin.relPos.x, c.pos.y + pin.relPos.y};
         const wxPoint pe = ToScreen(abs);
 
-        // 引脚短线:从矩形边框连到引脚端点
         wxPoint edge = o;
         if (pe.x < o.x - hw) {
             edge = wxPoint(o.x - hw, pe.y);
@@ -575,8 +796,27 @@ void CanvasPanel::DrawWire(wxDC& dc, const editor::Wire& w) const {
     if (!PinRefLogicalPos(w.from, &a) || !PinRefLogicalPos(w.to, &b)) {
         return;
     }
-    const bool selected = m_sel.IsWire() && m_sel.id == w.id;
-    dc.SetPen(selected ? wxPen(wxColour(0, 90, 200), 4) : wxPen(wxColour(0, 120, 0), 2));
+
+    wxColour colour;
+    int width = 2;
+    switch (WireLevel(w)) {                              // 电平着色(Logisim 风格)
+        case editor::SignalLevel::High:
+            colour = wxColour(0, 180, 0);
+            width = 3;
+            break;
+        case editor::SignalLevel::Low:
+            colour = wxColour(0, 95, 0);
+            break;
+        default:                                         // 悬空 / 未初始化
+            colour = wxColour(165, 165, 165);
+            break;
+    }
+    if (m_sel.IsWire() && m_sel.id == w.id) {            // 选中的线盖过电平色
+        colour = wxColour(0, 90, 200);
+        width = 4;
+    }
+
+    dc.SetPen(wxPen(colour, width));
     dc.DrawLine(ToScreen(a), ToScreen(b));
 }
 
@@ -589,7 +829,7 @@ void CanvasPanel::DrawRubberBand(wxDC& dc) const {
         return;
     }
 
-    editor::Point end = m_mouseLogical;                  // 未吸附时跟随鼠标
+    editor::Point end = m_mouseLogical;
     if (m_wireSnap.IsPin()) {
         editor::Point snapped;
         if (PinRefLogicalPos(editor::PinRef{m_wireSnap.id, m_wireSnap.pinIndex}, &snapped)) {
@@ -605,44 +845,40 @@ void CanvasPanel::DrawRubberBand(wxDC& dc) const {
 }
 
 // ---------------------------------------------------------------------------
-// 阶段二假数据(阶段四删除)
+// 收尾辅助
 // ---------------------------------------------------------------------------
 
-const editor::Component* CanvasPanel::FindComponent(const editor::Schematic& s,
-                                                    const std::string& id) {
-    for (const auto& c : s.components) {
-        if (c.id == id) {
-            return &c;
-        }
+void CanvasPanel::EndInteraction() {
+    if (HasCapture()) {
+        ReleaseMouse();
     }
-    return nullptr;
+    m_mode = Mode::Idle;
+    m_dragId.clear();
+    m_wireSnap = HitResult{};
 }
 
-editor::Schematic CanvasPanel::BuildDemoSchematic() {
-    constexpr int kOut = kSymW / 2 + kPinLen;    // +50
-    constexpr int kIn = -(kSymW / 2 + kPinLen);  // -50
+void CanvasPanel::CancelInteraction(const wxString& status) {
+    EndInteraction();
+    SetStatus(status);
+}
 
-    editor::Schematic s;
+void CanvasPanel::SetStatus(const wxString& text) {
+    if (m_status) {
+        m_status(text);
+    }
+}
 
-    // 两个开关 -> 与门 -> LED(与 docs/requirement.md 的 MVP 演示链路一致)
-    s.components.push_back(MkComponent(
-        "SW1", "SWITCH", 100, 160,
-        {MkPin("Y", editor::PinDirection::Output, kOut, 0)}));
-    s.components.push_back(MkComponent(
-        "SW2", "SWITCH", 100, 300,
-        {MkPin("Y", editor::PinDirection::Output, kOut, 0)}));
-    s.components.push_back(MkComponent(
-        "U1", "AND", 280, 230,
-        {MkPin("A", editor::PinDirection::Input, kIn, -10),
-         MkPin("B", editor::PinDirection::Input, kIn, 10),
-         MkPin("Y", editor::PinDirection::Output, kOut, 0)}));
-    s.components.push_back(MkComponent(
-        "LED1", "LED", 460, 230,
-        {MkPin("A", editor::PinDirection::Input, kIn, 0)}));
+void CanvasPanel::NotifySelection() {
+    if (!m_onSelection) {
+        return;
+    }
+    const editor::Component* sel =
+        (m_sel.IsComponent() || m_sel.IsPin()) ? Find(m_sel.id) : nullptr;
+    m_onSelection(sel);
+}
 
-    s.wires.push_back(MkWire("w1", "SW1", 0, "U1", 0));
-    s.wires.push_back(MkWire("w2", "SW2", 0, "U1", 1));
-    s.wires.push_back(MkWire("w3", "U1", 2, "LED1", 0));
-
-    return s;
+void CanvasPanel::NotifyChanged() {
+    if (m_onChanged) {
+        m_onChanged();
+    }
 }
