@@ -22,6 +22,11 @@ const Schematic& SchematicModel::data() const {
     return schematic_;
 }
 
+void SchematicModel::loadFrom(const Schematic& schematic) {
+    schematic_ = schematic;
+    rebuildNets();   // 文件里的 nets 可能过时,一律以 wires 为准
+}
+
 std::string SchematicModel::addElement(const std::string& type, Point pos) {
     ComponentLibrary lib;
     std::vector<PinDescriptor> pins = lib.pinTemplate(type);

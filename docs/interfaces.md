@@ -1,6 +1,6 @@
 # 模块接口约定
 
-> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-09-25(每次修改后更新这行)
+> 状态:□草稿 ☑评审中 □稳定 | 负责人:A | 最后更新:2026-10-08(每次修改后更新这行)
 > 四个类的声明分别在 src/model、src/components、src/io、src/simulation 的头文件里,本文档只做汇总,让每个人不用翻代码就知道别人提供什么。
 
 ## SchematicModel(src/model/schematic_model.h,负责人 A)
@@ -8,6 +8,7 @@
 | 方法 | 说明 |
 | --- | --- |
 | `const Schematic& data() const` | 只读访问全部数据(UI 渲染用) |
+| `void loadFrom(const Schematic&)` | 用现成的原理图替换当前内容(打开文件用);nets 按 wires 重算一遍 |
 | `std::string addElement(type, Point)` | 放新元件,返回 id;失败返回空串 |
 | `bool removeElement(id)` | 删除元件,连带删掉它引脚上的导线 |
 | `bool moveElement(id, Point)` | 移动元件(只改坐标,连接关系不变) |
@@ -29,7 +30,7 @@
 > 坐标来源:B 画布临时端点,如后续调整需同步更新此表。
 
 | 类型 | 显示名 | 引脚名 | 方向 | relPos (x, y) |
-|------|--------|--------|------|---------------|
+| ------ | -------- | -------- | ------ | --------------- |
 | AND | 与门 | A | Input | (-50, -10) |
 | AND | 与门 | B | Input | (-50, 10) |
 | AND | 与门 | Y | Output | (50, 0) |

@@ -12,6 +12,10 @@ public:
     /// 只读访问全部数据(UI 渲染用)
     const Schematic& data() const;
 
+    /// 用一份现成的原理图替换当前内容(打开文件用)。
+    /// nets 会按 wires 重算一遍 —— 文件里存的 nets 不作数。
+    void loadFrom(const Schematic& schematic);
+
     /// 放置一个指定类型的新元件,返回新元件 id;失败返回空串。
     /// type 从 ComponentLibrary::types() 里取。
     std::string addElement(const std::string& type, Point pos);

@@ -121,7 +121,7 @@
 
 > 周末回填,没做完就写做到哪了。
 
-- **A**:
+- **A**:`NetlistIO` 完成 —— `save` / `load`(nlohmann/json 3.11.3 单头放进 `src/io/json.hpp`;JSON 往返后 id / 引脚 / 坐标全不变,坏文件不破坏原数据)、`exportNetlist`(输出 KiCad 的 s-expression 网表,Pcbnew 可导入;引脚按**名字**索引,`tstamp` 由元件 id 哈希而来,所以导出结果稳定、可 diff)。新增 `SchematicModel::loadFrom()` —— 打开文件时把读进来的原理图换进去,`nets` 一律按 `wires` 重算:文件里存的 nets 不作数,否则手改过的文件会让网络和导线对不上。新增 `tests/io_test.cpp` + `io_test` 目标,**61 项自测全过**;另写了个 Python 校验器当外援,把导出的 `.net` 当真正的 s-expression 解析、再和同一份 `.json` 交叉对照,**50/50 通过**。踩到两个只在 Windows 上出现的跨平台坑(已写进 README 第六节第 7 条):MinGW 的 `ifstream` 打开失败**不置 failbit**,`if (!in)` 失效;Windows 的 `std::rename` 目标已存在时会失败。网表格式说明写在 `src/io/netlist_io.h` 的注释里,不占 docs;`docs/interfaces.md` 只加了 `loadFrom` 一行。另外定了一条:**「保存时顺手导出网表」是 UI 层的事**(B 的保存菜单项里一次点击调 `save` + `exportNetlist` 两个函数),`io` 层保持两个独立函数 —— 需求表 F-03 / F-04 是两条独立验收项,代码里分开,答辩好指。未做:UI 侧的菜单项(属 B 的阶段四)。
 - **B**:
 - **C**:
 - **D**:

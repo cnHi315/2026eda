@@ -19,8 +19,8 @@
 
 - [x] A1 实现 `SchematicModel` 增删改查(addElement / removeElement / moveElement)。**已完成**(1925649):`addElement` 的引脚模板取自 C 的 `pinTemplate()`。核对:test-plan T-02。
 - [x] A2 实现 addWire / removeWire 及 net 生成规则(端点已在某网络则并入,否则新建;不允许输出直连/重复连线)。**已完成**:addWire 覆盖新建/并入/合并/已连通四种情况 + 四道校验;`removeWire(wireId)` 的语义按实际使用场景改为**删一条导线**(参数是 `Wire::id`),删完由 `rebuildNets()` 整体重算 nets。核对:test-plan T-03。
-- [ ] A3 `NetlistIO::save / load`:JSON 往返,id 保持稳定。开工时引入 nlohmann/json 单头文件放到 src/io/。核对:test-plan T-04。
-- [ ] A4 `NetlistIO::exportNetlist`:文本网表。**先导出 KiCad 的网表研究它的格式**,格式说明补进 docs/data-model.md。核对:test-plan T-05。
+- [x] A3 `NetlistIO::save / load`:JSON 往返,id 保持稳定。**已完成**:nlohmann/json 3.11.3 单头已放 `src/io/json.hpp`;往返后 id / 引脚 / 坐标全部不变,坏文件不会破坏原数据。核对:test-plan T-04。
+- [x] A4 `NetlistIO::exportNetlist`:文本网表。**已完成**:输出 KiCad 的 s-expression 网表(`.net`),Pcbnew 可导入;引脚按名字索引,`tstamp` 由 id 哈希而来(导出结果稳定可 diff)。格式说明已补进 docs/data-model.md。核对:test-plan T-05。
 
 ## C — 元件库(src/components)
 
