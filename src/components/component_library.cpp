@@ -40,16 +40,17 @@ std::vector<PinDescriptor> ComponentLibrary::pinTemplate(const std::string& type
     }
 
     if (type == "SWITCH") {
+        // 第 4 周定稿:开关是"源",收敛成 1 个引脚(输出)。
+        // 这样 setInput(id, 0, …) 直接就是输出脚,电平能进网络(原先两脚时 0 号是输入脚,拨开关是死的)。
         return {
-            {"A", PinDirection::Input,  {-50, 0}},
             {"Y", PinDirection::Output, { 50, 0}},
         };
     }
 
     if (type == "LED") {
+        // 第 4 周定稿:LED 是"汇",收敛成 1 个引脚(输入)。
         return {
             {"A", PinDirection::Input,  {-50, 0}},
-            {"K", PinDirection::Output, { 50, 0}},
         };
     }
 

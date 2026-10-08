@@ -65,7 +65,7 @@ SchematicModel makeDemo() {
     m.addElement("SWITCH", {100, 300});   // SW2
     m.addElement("AND",    {300, 200});   // U1
     m.addElement("LED",    {500, 200});   // LED1
-    m.addWire({"SW1", 1}, {"U1", 0});     // wire1
+    m.addWire({"SW1", 0}, {"U1", 0});     // wire1
     m.addWire({"SW2", 1}, {"U1", 1});     // wire2
     m.addWire({"U1", 2},  {"LED1", 0});   // wire3
     return m;
@@ -111,7 +111,7 @@ void testRoundTrip() {
     // 导线
     CHECK(back.wires[0].id == "wire1");
     CHECK(back.wires[0].from.componentId == "SW1");
-    CHECK(back.wires[0].from.pinIndex == 1);
+    CHECK(back.wires[0].from.pinIndex == 0);
     CHECK(back.wires[0].to.componentId == "U1");
     CHECK(back.wires[0].to.pinIndex == 0);
 
@@ -149,14 +149,12 @@ void testLoadFromRebuildsNets() {
   "version": 1,
   "components": [
     {"id":"SW1","type":"SWITCH","name":"SW1","pos":{"x":0,"y":0},"rotation":0,
-     "pins":[{"name":"A","direction":"input","relPos":{"x":-50,"y":0}},
-             {"name":"Y","direction":"output","relPos":{"x":50,"y":0}}]},
+     "pins":[{"name":"Y","direction":"output","relPos":{"x":50,"y":0}}]},
     {"id":"LED1","type":"LED","name":"LED1","pos":{"x":200,"y":0},"rotation":0,
-     "pins":[{"name":"A","direction":"input","relPos":{"x":-50,"y":0}},
-             {"name":"K","direction":"output","relPos":{"x":50,"y":0}}]}
+     "pins":[{"name":"A","direction":"input","relPos":{"x":-50,"y":0}}]}
   ],
   "wires": [
-    {"id":"wire1","from":{"componentId":"SW1","pinIndex":1},
+    {"id":"wire1","from":{"componentId":"SW1","pinIndex":0},
                  "to":{"componentId":"LED1","pinIndex":0}}
   ],
   "nets": []

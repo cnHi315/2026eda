@@ -58,18 +58,18 @@ void testAddElement() {
 void testAddWireRules() {
     std::cout << "\n== 2. addWire 的四道校验 ==\n";
     SchematicModel m;
-    m.addElement("SWITCH", {0, 0});   // SW1:pins[0]=A(入) pins[1]=Y(出)
+    m.addElement("SWITCH", {0, 0});   // SW1:pins[0]=Y(出)—— 第 4 周定稿为单脚(源)
     m.addElement("AND", {0, 0});      // U1 :pins[0]=A(入) [1]=B(入) [2]=Y(出)
-    m.addElement("LED", {0, 0});      // LED1:pins[0]=A(入) [1]=K(出)
+    m.addElement("LED", {0, 0});      // LED1:pins[0]=A(入)—— 单脚(汇)
 
-    CHECK(m.addWire({"SW1", 1}, {"U1", 0}) == "net1");
+    CHECK(m.addWire({"SW1", 0}, {"U1", 0}) == "net1");
     CHECK(m.data().nets.size() == 1);
     CHECK(m.data().nets[0].pins.size() == 2);
 
-    CHECK(m.addWire({"SW1", 1}, {"U1", 0}) == "");       // 重复(正向)
-    CHECK(m.addWire({"U1", 0}, {"SW1", 1}) == "");       // 重复(反向)
+    CHECK(m.addWire({"SW1", 0}, {"U1", 0}) == "");       // 重复(正向)
+    CHECK(m.addWire({"U1", 0}, {"SW1", 0}) == "");       // 重复(反向)
     CHECK(m.addWire({"U1", 0}, {"U1", 0}) == "");        // 自环
-    CHECK(m.addWire({"SW1", 1}, {"LED1", 1}) == "");     // 输出直连输出
+    CHECK(m.addWire({"SW1", 0}, {"U1", 2}) == "");       // 输出直连输出(SW1.Y -> U1.Y)
     CHECK(m.addWire({"U1", 9}, {"LED1", 0}) == "");      // 引脚下标越界
     CHECK(m.addWire({"NOPE", 0}, {"LED1", 0}) == "");    // 元件不存在
 }
@@ -83,12 +83,12 @@ void testNetRules() {
     m.addElement("OR", {0, 0});       // U1
     m.addElement("LED", {0, 0});      // LED1
 
-    CHECK(m.addWire({"SW1", 1}, {"U1", 0}) == "net1");   // 都不在     -> 新建
-    CHECK(m.addWire({"SW1", 1}, {"U1", 1}) == "net1");   // 一个在     -> 并入
+    CHECK(m.addWire({"SW1", 0}, {"U1", 0}) == "net1");   // 都不在     -> 新建
+    CHECK(m.addWire({"SW1", 0}, {"U1", 1}) == "net1");   // 一个在     -> 并入
     CHECK(m.data().nets.size() == 1);
     CHECK(m.data().nets[0].pins.size() == 3);
 
-    CHECK(m.addWire({"SW2", 1}, {"U1", 1}) == "net1");   // 已连通     -> 不动
+    CHECK(m.addWire({"SW2", 0}, {"U1", 1}) == "net1");   // 已连通     -> 不动
     CHECK(m.data().nets[0].pins.size() == 4);
 
     m.addWire({"U1", 2}, {"LED1", 0});                   // U1.Y 拉出去,另起一个网
@@ -109,7 +109,7 @@ void testRemoveWire() {
     m.addElement("LED", {0, 0});      // LED1
 
     // SW1.Y -- U1.A -- U1.B -- LED1.A,三根线串成一条链
-    m.addWire({"SW1", 1}, {"U1", 0});   // wire1
+    m.addWire({"SW1", 0}, {"U1", 0});   // wire1
     m.addWire({"U1", 0}, {"U1", 1});    // wire2  <- 待会儿删它
     m.addWire({"U1", 1}, {"LED1", 0});  // wire3
     CHECK(m.data().nets.size() == 1);
@@ -129,7 +129,7 @@ void testRemoveElement() {
     SchematicModel m;
     m.addElement("SWITCH", {0, 0});
     m.addElement("LED", {0, 0});
-    m.addWire({"SW1", 1}, {"LED1", 0});
+    m.addWire({"SW1", 0}, {"LED1", 0});
     CHECK(m.data().nets.size() == 1);
 
     CHECK(m.removeElement("LED1"));
@@ -145,7 +145,7 @@ void testMoveElement() {
     SchematicModel m;
     m.addElement("SWITCH", {0, 0});
     m.addElement("LED", {0, 0});
-    m.addWire({"SW1", 1}, {"LED1", 0});
+    m.addWire({"SW1", 0}, {"LED1", 0});
     const std::string netIdBefore = m.data().nets[0].id;
 
     CHECK(m.moveElement("LED1", {800, 600}));
@@ -164,10 +164,10 @@ void testParallelWire() {
     m.addElement("SWITCH", {0, 0});
     m.addElement("AND", {0, 0});
     m.addElement("LED", {0, 0});
-    m.addWire({"SW1", 1}, {"U1", 0});
+    m.addWire({"SW1", 0}, {"U1", 0});
     m.addWire({"U1", 0}, {"U1", 1});
     m.addWire({"U1", 1}, {"LED1", 0});
-    m.addWire({"SW1", 1}, {"LED1", 0});          // 两端本来就通,允许(并联)
+    m.addWire({"SW1", 0}, {"LED1", 0});          // 两端本来就通,允许(并联)
     CHECK(m.data().wires.size() == 4);
     CHECK(m.data().nets.size() == 1);
     CHECK(m.data().nets[0].pins.size() == 4);
