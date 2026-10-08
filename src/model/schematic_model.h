@@ -12,6 +12,10 @@ public:
     /// 只读访问全部数据(UI 渲染用)
     const Schematic& data() const;
 
+    /// 用一份现成的原理图替换当前内容(打开文件用)。
+    /// nets 会按 wires 重算一遍 —— 文件里存的 nets 不作数。
+    void loadFrom(const Schematic& schematic);
+
     /// 放置一个指定类型的新元件,返回新元件 id;失败返回空串。
     /// type 从 ComponentLibrary::types() 里取。
     std::string addElement(const std::string& type, Point pos);
@@ -27,8 +31,8 @@ public:
     /// 拓扑约束:不允许两个输出引脚直连;同一条线不能重复(两个端点相同,正反都算)。
     std::string addWire(PinRef from, PinRef to);
 
-    /// 断开指定网络(删除该网络的全部导线),成功返回 true。
-    bool removeWire(const std::string& netId);
+    /// 删掉一条导线(参数是 Wire::id,不是网络 id),成功返回 true。
+    bool removeWire(const std::string& wireId);
 
     /// 按 id 查找元件;不存在返回 nullptr。
     const Component* findComponent(const std::string& id) const;
@@ -37,6 +41,10 @@ private:
     // 查询引脚所属网络，没找到返回nullptr
     Net* findNetOf(const PinRef& pir);
 
+    // 从 wires_ 重新推导 nets_(删线 / 删元件之后调用)
+    void rebuildNets();
+
+    std::string newComponentId(const std::string& type);
     std::string newNetId();
     std::string newWireId();
 

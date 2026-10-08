@@ -4,8 +4,20 @@
 #include <wx/sizer.h>
 #include <wx/stattext.h>
 
+#include "contract/data_model.h"
+
 namespace {
+
 wxString U8(const char* s) { return wxString::FromUTF8(s); }
+
+/// 只读的字符串属性行。
+wxPGProperty* RO(wxPropertyGrid* grid, const wxString& label, const wxString& value) {
+    auto* prop = new wxStringProperty(label, wxPG_LABEL, value);
+    grid->Append(prop);
+    grid->SetPropertyReadOnly(prop);
+    return prop;
+}
+
 } // namespace
 
 PropertyPanel::PropertyPanel(wxWindow* parent)
@@ -22,16 +34,32 @@ PropertyPanel::PropertyPanel(wxWindow* parent)
     sizer->Add(m_grid, 1, wxEXPAND | wxALL, 4);
     SetSizer(sizer);
 
-    FillPlaceholder();
+    ShowComponent(nullptr);
 }
 
-void PropertyPanel::FillPlaceholder() {
+void PropertyPanel::ShowComponent(const editor::Component* c) {
+    m_grid->Clear();
+
     m_grid->Append(new wxPropertyCategory(U8("元件")));
-    m_grid->Append(new wxStringProperty("id", wxPG_LABEL, wxEmptyString));
-    m_grid->Append(new wxStringProperty(U8("类型"), wxPG_LABEL, wxEmptyString));
-    m_grid->Append(new wxStringProperty(U8("名称"), wxPG_LABEL, wxEmptyString));
+    if (c == nullptr) {
+        RO(m_grid, U8("选中"), U8("(未选中)"));
+        return;
+    }
+
+    RO(m_grid, "id", wxString::FromUTF8(c->id.c_str()));
+    RO(m_grid, U8("类型"), wxString::FromUTF8(c->type.c_str()));
+    RO(m_grid, U8("名称"), wxString::FromUTF8(c->name.c_str()));
 
     m_grid->Append(new wxPropertyCategory(U8("几何")));
-    m_grid->Append(new wxStringProperty(U8("位置"), wxPG_LABEL, wxEmptyString));
-    m_grid->Append(new wxStringProperty(U8("旋转"), wxPG_LABEL, wxEmptyString));
+    RO(m_grid, U8("位置"), wxString::Format("(%d, %d)", c->pos.x, c->pos.y));
+    RO(m_grid, U8("旋转"), wxString::Format(U8("%d°"), c->rotation));
+
+    m_grid->Append(new wxPropertyCategory(U8("引脚")));
+    RO(m_grid, U8("数量"), wxString::Format("%zu", c->pins.size()));
+    for (size_t i = 0; i < c->pins.size(); ++i) {
+        const editor::PinDescriptor& p = c->pins[i];
+        const wxString dir = p.direction == editor::PinDirection::Input ? U8("输入") : U8("输出");
+        RO(m_grid, wxString::Format("[%zu] ", i) + wxString::FromUTF8(p.name.c_str()),
+           dir + wxString::Format("  rel(%d, %d)", p.relPos.x, p.relPos.y));
+    }
 }

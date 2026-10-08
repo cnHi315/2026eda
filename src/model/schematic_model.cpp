@@ -1,28 +1,79 @@
 #include "model/schematic_model.h"
 
+#include "components/component_library.h"
+
 // TODO(A): 逐方法实现,每完成一项对照 docs/test-plan.md 的 T-02/T-03 核对。
 
 namespace editor {
+
+namespace {
+
+// 元件 id 前缀(见 docs/data-model.md)。没列出的新类型用类型名本身,不必等这边改。
+std::string typePrefix(const std::string& type) {
+    if (type == "AND" || type == "OR" || type == "NOT") return "U";
+    if (type == "SWITCH") return "SW";
+    if (type == "LED")    return "LED";
+    return type;
+}
+
+} // namespace
 
 const Schematic& SchematicModel::data() const {
     return schematic_;
 }
 
+void SchematicModel::loadFrom(const Schematic& schematic) {
+    schematic_ = schematic;
+    rebuildNets();   // 文件里的 nets 可能过时,一律以 wires 为准
+}
+
 std::string SchematicModel::addElement(const std::string& type, Point pos) {
-    (void)type;
-    (void)pos;
-    return "";  // TODO(A): 生成 "U1" 这类全局唯一 id,填好 pins(从 ComponentLibrary 取模板)
+    ComponentLibrary lib;
+    std::vector<PinDescriptor> pins = lib.pinTemplate(type);
+    if (pins.empty()) return "";   // 库里没这个类型
+
+    Component comp;
+    comp.type = type;
+    comp.pos  = pos;
+    comp.pins = pins;
+    comp.id   = newComponentId(type);
+    comp.name = comp.id;           // 显示名默认等于 id
+
+    schematic_.components.push_back(comp);
+    return comp.id;                // 新元件还没接线,nets 不受影响
 }
 
 bool SchematicModel::removeElement(const std::string& id) {
-    (void)id;
-    return false;  // TODO(A)
+    // 1. 删掉元件本身
+    int idx = -1;
+    for (int i = 0; i < (int)schematic_.components.size(); ++i) {
+        if (schematic_.components[i].id == id) { idx = i; break; }
+    }
+    if (idx == -1) return false;
+    schematic_.components.erase(schematic_.components.begin() + idx);
+
+    // 2. 把挂在它上面的导线一并删掉(任一端是它就算)
+    std::vector<Wire> keep;
+    for (const Wire& wire : schematic_.wires) {
+        if (wire.from.componentId != id && wire.to.componentId != id)
+            keep.push_back(wire);
+    }
+    schematic_.wires.swap(keep);
+
+    // 3. 连接关系变了,nets 重算
+    rebuildNets();
+    return true;
 }
 
 bool SchematicModel::moveElement(const std::string& id, Point pos) {
-    (void)id;
-    (void)pos;
-    return false;  // TODO(A)
+    // 只改坐标。Wire 里存的是 PinRef 不是坐标,所以连接关系一点没变,nets 不用动。
+    for (Component& comp : schematic_.components) {
+        if (comp.id == id) {
+            comp.pos = pos;
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string SchematicModel::addWire(PinRef from, PinRef to) {
@@ -96,9 +147,16 @@ std::string SchematicModel::addWire(PinRef from, PinRef to) {
     return "";
 }
 
-bool SchematicModel::removeWire(const std::string& netId) {
-    (void)netId;
-    return false;  // TODO(A)
+bool SchematicModel::removeWire(const std::string& wireId) {
+    for (int i = 0; i < (int)schematic_.wires.size(); ++i) {
+        if (schematic_.wires[i].id == wireId) {
+            schematic_.wires.erase(schematic_.wires.begin() + i);
+            // 少了这条边,原来的网络可能被拆开 —— 重算一遍
+            rebuildNets();
+            return true;
+        }
+    }
+    return false;
 }
 
 const Component* SchematicModel::findComponent(const std::string& id) const {
@@ -118,6 +176,14 @@ Net* SchematicModel::findNetOf(const PinRef& pin){
         }
     }
     return nullptr;
+}
+
+std::string SchematicModel::newComponentId(const std::string& type){
+    const std::string prefix = typePrefix(type);
+    for(int i=1;;++i){
+        std::string id = prefix + std::to_string(i);
+        if (findComponent(id) == nullptr) return id;
+    }
 }
 
 std::string SchematicModel::newNetId(){
@@ -143,6 +209,46 @@ std::string SchematicModel::newWireId(){
             }
         }
         if(!used) return id;
+    }
+}
+
+// 从 wires_ 重新推导 nets_:每条线是一条边,求连通分量,每个分量合成一个网络。
+// 删线 / 删元件之后调用,保证"两引脚相连 ⟺ 在同一网络"。
+void SchematicModel::rebuildNets(){
+    schematic_.nets.clear();
+    if (schematic_.wires.empty()) return;
+
+    // 1. 每条线把两个端点并进同一组;groups 的每个元素是一组互连引脚。
+    std::vector<std::vector<PinRef>> groups;
+    for (const Wire& wire : schematic_.wires){
+        // 看两个端点各自落在哪一组(没出现过就是 -1)
+        int gi = -1, gj = -1;
+        for (int k = 0; k < (int)groups.size(); ++k){
+            for (const PinRef& p : groups[k]){
+                if (p.componentId == wire.from.componentId && p.pinIndex == wire.from.pinIndex) gi = k;
+                if (p.componentId == wire.to.componentId   && p.pinIndex == wire.to.pinIndex)   gj = k;
+            }
+        }
+        if (gi == -1 && gj == -1){          // 两个端点都是新的 -> 开一组
+            groups.push_back({wire.from, wire.to});
+        } else if (gi == -1){               // from 是新的 -> 塞进 to 那组
+            groups[gj].push_back(wire.from);
+        } else if (gj == -1){               // to 是新的 -> 塞进 from 那组
+            groups[gi].push_back(wire.to);
+        } else if (gi != gj){               // 分属两组 -> 合到一起
+            for (const PinRef& p : groups[gj]) groups[gi].push_back(p);
+            groups.erase(groups.begin() + gj);
+        }
+        // gi == gj:这条线两端本来就通(并联),不用动
+    }
+
+    // 2. 每组一个网络。只剩一个引脚的组不成网络。
+    for (const std::vector<PinRef>& group : groups){
+        if (group.size() < 2) continue;
+        Net net;
+        net.pins = group;
+        net.id = newNetId();   // nets_ 是空的,所以会依次拿到 net1、net2 …
+        schematic_.nets.push_back(net);
     }
 }
 

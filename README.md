@@ -85,9 +85,7 @@ sudo apt install -y build-essential cmake git libwxgtk3.2-dev
 
 ## 六、给 AI 助手的约定
 
-组员的机器**不统一** —— Windows 和 Linux 都有,而 AI 助手默认会按单一平台写代码。
-
-**如果你(AI 助手)要改这个仓库,请遵守下面几条:**
+组员的机器**不统一**(Windows / Linux 都有),而 AI 助手默认会按单一平台写代码。**改这个仓库时请遵守:**
 
 1. **禁止平台专有 API**。确实需要区分平台时,用 `#ifdef _WIN32` 包住,并保证另一条分支也能编译。
 2. **不要改 `CMakeLists.txt` 和 `src/contract/data_model.h`** —— 这两个是全组共享的,要改先问人。

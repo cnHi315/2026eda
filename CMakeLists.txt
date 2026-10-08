@@ -48,3 +48,21 @@ target_link_libraries(CircuitEditor ${wxWidgets_LIBRARIES})
 #   ./build/sim_test          (Windows 上是 build\sim_test.exe)
 # ---------------------------------------------------------------------------
 add_executable(sim_test tests/main_test.cpp src/simulation/simulator.cpp)
+
+# ---------------------------------------------------------------------------
+# 控制台测试目标:SchematicModel 增删改查自测(跨平台,不链接 wx)
+#   ./build/model_test        (Windows 上是 build\model_test.exe)
+# ---------------------------------------------------------------------------
+add_executable(model_test tests/model_test.cpp
+    src/model/schematic_model.cpp
+    src/components/component_library.cpp)
+
+# ---------------------------------------------------------------------------
+# 控制台测试目标:保存 / 打开 / 导出网表自测(跨平台,不链接 wx)
+#   ./build/io_test           (Windows 上是 build\io_test.exe)
+# 注意:要在仓库根目录下跑,临时文件写在 build/ 里
+# ---------------------------------------------------------------------------
+add_executable(io_test tests/io_test.cpp
+    src/io/netlist_io.cpp
+    src/model/schematic_model.cpp
+    src/components/component_library.cpp)
