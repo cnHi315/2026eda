@@ -125,10 +125,9 @@
 - **B**:阶段四(真数据上屏)完成 —— `CanvasPanel` 改读 `SchematicModel::data()`,删掉 `m_demo` / `BuildDemoSchematic`;写操作全部走 model(`addElement / moveElement / addWire / removeWire / removeElement`),失败与非法操作在状态栏给原因;元件树改由 `ComponentLibrary::types() / displayName()` 填充(中文),选中类型 → 画布点击放置(吸附 20 栅格,支持连续放置,Esc 退出);Delete 删除选中元件/导线;双击 SWITCH 拨动电平(默认关闭,v1 不写进 JSON),每次变化 `Simulator::load(data) + setInput + step()`,导线按电平着色(高=亮绿 3px / 低=暗绿 2px / 未知=灰 2px)、LED 亮灭、开关底色变化;属性表显示选中元件(只读,含引脚表);文件菜单与工具栏接 `NetlistIO`(新建 / 打开 / 保存 / 另存为 / 导出网表),状态栏第二格实时显示"元件 / 导线 / 网络"计数。验证:全量构建 0 warning;model_test 57/57、io_test 61/61、sim_test PASS;test-plan T-10 端到端机器化核对 15/15。踩坑记录:非 ASCII 文本必须走 `U8()`(FromUTF8),窗口标题原写成窄字面量 `"Circuit Editor — "`,在这台机器的 locale 下被吞成空串,标题只剩文件名。
 - **B(issue 1 / 4)**:画布体验与性能补齐 —— ① **滚动/平移**:中键拖动 + 滚轮 / Shift+滚轮(触摸板横扫)平移视图,`m_origin` 即平移量并做"内容至少留 40px 在视口内"的夹取;网格线锚定逻辑原点(平移非整格时整体跟着走),坐标换算仍集中在 `ToScreen()/ToLogical()`,所以命中检测与拖拽在平移状态下不用改任何代码。② **局部重绘**:拖拽只刷"旧位置 ∪ 新位置(含相连导线)"、橡皮筋只刷"上一帧 ∪ 当前帧"、悬停只刷前后两个元件;网格绘制按 DC 的 `GetClippingBox()` 限定循环范围;`Find()` 加 id→指针索引缓存(结构变化时标脏重建),避免每帧 O(n) 线性查找。验证:test-plan T-11 机器化核对 11/11(位移量精确到像素、平移后命中/拖动仍准、原位置无残影、网格随平移整体位移、滚轮一格 40px);性能 400 元件 13.5ms/帧、1000 元件 32.8ms/帧(含拖拽处理与绘制)。
 - **C**:
-- **D**:
+- **D**:`setSignalCallback` 契约定死(B 局部刷新用)—— OnChange 去重(`setInput`/`step` 统一 `find` 判定,修掉首次拨 Low 漏回调);单次 `step()` 回调上限 1000,超限静默丢弃、整步只打一行警告;SWITCH/LED 与 C 定稿的单脚模型对齐;真实链路随 B 阶段四验证通过(T-10、sim_test PASS);A-D 联调测试 `testSchematicModelIntegration` 已写好(`#if 0` 待构建文件解锁);六个核心函数补设计注释。
 
 ### 第 4 周问题
 
 > 卡住的写这里:哪个文件、什么现象、想找谁。
 
--
