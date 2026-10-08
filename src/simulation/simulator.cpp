@@ -215,6 +215,12 @@ void testAndGateTruthTable() {
 //   3) 在 tests/main_test.cpp 中调用 testSchematicModelIntegration()
 //
 // 启用方法: 去掉下面的 #if 0 / #endif
+//
+// 2026-10-08(合并 main 时由 B 最小修复):这段代码原先少了 #if 0,而且 #include 落在
+// namespace editor 内部 —— 头文件里的 namespace editor 会被再次嵌套,编译器把类名解析成
+// editor::editor::SchematicModel,整个仓库(Linux 与 Windows)都编不过。先按注释的原意
+// 补上守卫,恢复构建。真正启用时建议按 README 的约定把这段挪到 tests/ 去。
+#if 0
 #include "../model/schematic_model.h"
 void testSchematicModelIntegration() {
     std::cout << "\n>>> 开始运行 D 任务: SchematicModel 真实数据联调 <<<" << std::endl;
@@ -255,5 +261,6 @@ void testSchematicModelIntegration() {
     }
     std::cout << ">>> [PASS] SchematicModel 真实数据联调通过！<<<" << std::endl;
 }
+#endif
 
 } // namespace editor
