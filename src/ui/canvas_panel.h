@@ -86,6 +86,9 @@ private:
     void OnLeftDClick(wxMouseEvent& evt);
     void OnMotion(wxMouseEvent& evt);
     void OnLeftUp(wxMouseEvent& evt);
+    void OnMiddleDown(wxMouseEvent& evt);
+    void OnMiddleUp(wxMouseEvent& evt);
+    void OnMouseWheel(wxMouseEvent& evt);
     void OnLeaveWindow(wxMouseEvent& evt);
     void OnCaptureLost(wxMouseCaptureLostEvent& evt);
     void OnKeyDown(wxKeyEvent& evt);
@@ -97,6 +100,19 @@ private:
     void DrawWire(wxDC& dc, const editor::Wire& w) const;
     void DrawPinDot(wxDC& dc, const wxPoint& p, bool highlight) const;
     void DrawRubberBand(wxDC& dc) const;
+
+    // —— 视图平移(issue 1) ——
+    void PanBy(const wxPoint& deltaDevice);
+    void ClampOrigin();
+    wxRect WorldRectLogical() const;      ///< 内容包围盒(逻辑坐标,含引脚与标签余量)
+
+    // —— 局部重绘(issue 4) ——
+    wxRect ScreenRectOf(const editor::Component& c, int margin) const;
+    wxRect ScreenRectOfWire(const editor::Wire& w, int margin) const;
+    wxRect RubberBandScreenRect() const;
+    void RefreshComponentArea(const std::string& id);
+    void RefreshRubberBandArea(const wxRect& previous);
+    void RebuildIndexIfNeeded() const;
 
     // —— 坐标换算(逻辑坐标 <-> 屏幕像素) ——
     wxPoint ToScreen(const editor::Point& p) const;
@@ -142,7 +158,19 @@ private:
     editor::SchematicModel* m_model = nullptr;   ///< 不持有,由 MainFrame 管理
     editor::Simulator* m_sim = nullptr;          ///< 不持有
     double m_scale = 1.0;                        ///< 预留缩放;当前恒为 1.0
-    wxPoint m_origin{0, 0};                      ///< 逻辑原点的屏幕偏移(预留平移)
+    wxPoint m_origin{0, 0};                      ///< 逻辑原点的屏幕偏移(= 平移量)
+
+    // —— 视图平移状态 ——
+    bool m_panning = false;
+    wxPoint m_panStartMouse{0, 0};
+    wxPoint m_panStartOrigin{0, 0};
+
+    // —— 局部重绘:上一帧橡皮筋的屏幕矩形 ——
+    wxRect m_bandRect{-1, -1, 0, 0};
+
+    /// id → 元件 的索引缓存(增量重建;避免每帧 O(n) 线性查找)
+    mutable std::unordered_map<std::string, const editor::Component*> m_index;
+    mutable bool m_indexDirty = true;
 
     // —— 交互状态 ——
     Mode m_mode = Mode::Idle;
@@ -172,4 +200,6 @@ private:
     static constexpr int kPinLen    = 20;
     static constexpr int kPinHitR   = 8;
     static constexpr int kWireHitR  = 4;
+    static constexpr int kPanKeep   = 40;   ///< 平移时至少留在视口内的内容像素
+    static constexpr int kCmpMargin = 26;   ///< 局部重绘:元件外扩(含标签/选中框)
 };

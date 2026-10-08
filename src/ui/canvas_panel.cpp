@@ -45,6 +45,9 @@ CanvasPanel::CanvasPanel(wxWindow* parent)
     Bind(wxEVT_LEFT_DCLICK, &CanvasPanel::OnLeftDClick, this);
     Bind(wxEVT_MOTION, &CanvasPanel::OnMotion, this);
     Bind(wxEVT_LEFT_UP, &CanvasPanel::OnLeftUp, this);
+    Bind(wxEVT_MIDDLE_DOWN, &CanvasPanel::OnMiddleDown, this);
+    Bind(wxEVT_MIDDLE_UP, &CanvasPanel::OnMiddleUp, this);
+    Bind(wxEVT_MOUSEWHEEL, &CanvasPanel::OnMouseWheel, this);
     Bind(wxEVT_LEAVE_WINDOW, &CanvasPanel::OnLeaveWindow, this);
     Bind(wxEVT_MOUSE_CAPTURE_LOST, &CanvasPanel::OnCaptureLost, this);
     Bind(wxEVT_KEY_DOWN, &CanvasPanel::OnKeyDown, this);
@@ -200,6 +203,13 @@ void CanvasPanel::OnMotion(wxMouseEvent& evt) {
     const editor::Point p = ToLogical(evt.GetPosition());
     m_mouseLogical = p;
 
+    if (m_panning) {                                     // 中键拖动 = 平移视图
+        m_origin = m_panStartOrigin + (evt.GetPosition() - m_panStartMouse);
+        ClampOrigin();
+        Refresh();
+        return;
+    }
+
     if (m_mode == Mode::DraggingComponent) {             // 实时跟随(吸附到栅格)
         const editor::Point raw{p.x - m_dragGrab.x, p.y - m_dragGrab.y};
         if (!m_dragMoved &&
@@ -207,13 +217,27 @@ void CanvasPanel::OnMotion(wxMouseEvent& evt) {
             return;                                      // 仍在"单击抖动"范围内:先不动
         }
         m_dragMoved = true;
+
+        wxRect oldArea;                                  // 旧位置也要重绘(局部刷新)
+        if (const editor::Component* before = Find(m_dragId)) {
+            oldArea = ScreenRectOf(*before, kCmpMargin);
+            for (const auto& w : S().wires) {
+                if (w.from.componentId == m_dragId || w.to.componentId == m_dragId) {
+                    oldArea.Union(ScreenRectOfWire(w, 6));
+                }
+            }
+        }
         MoveComponentTo(m_dragId, SnapToGrid(raw));
-        Refresh();
+        if (!oldArea.IsEmpty()) {
+            RefreshRect(oldArea);
+        }
+        RefreshComponentArea(m_dragId);
         return;
     }
 
     if (m_mode == Mode::DrawingWire) {                   // 橡皮筋 + 目标引脚吸附
         const HitResult hit = HitTestPin(p);
+        const wxRect previousBand = m_bandRect;
         if (!hit.SameAs(m_wireSnap)) {
             m_wireSnap = hit;
             if (hit.IsPin()) {
@@ -226,14 +250,21 @@ void CanvasPanel::OnMotion(wxMouseEvent& evt) {
                 SetStatus(U8("连线中 —— 拖到目标引脚,再松开;Esc 取消"));
             }
         }
-        Refresh();
+        m_bandRect = RubberBandScreenRect();
+        RefreshRubberBandArea(previousBand);
         return;
     }
 
     const HitResult hit = HitTest(p);                    // 空闲态:更新悬停高亮
     if (!hit.SameAs(m_hover)) {
+        const HitResult previous = m_hover;
         m_hover = hit;
-        Refresh();
+        if (!previous.IsNone()) {
+            RefreshComponentArea(previous.id);
+        }
+        if (!hit.IsNone()) {
+            RefreshComponentArea(hit.id);
+        }
     }
     evt.Skip();
 }
@@ -293,10 +324,55 @@ void CanvasPanel::OnLeaveWindow(wxMouseEvent& evt) {
 
 void CanvasPanel::OnCaptureLost(wxMouseCaptureLostEvent&) {
     // 系统抢走鼠标捕获时必须复位,否则状态机会卡在拖拽/连线态。
+    if (m_panning) {
+        m_panning = false;
+        SetCursor(wxNullCursor);
+        return;
+    }
     if (m_mode != Mode::Idle) {
         CancelInteraction(U8("操作已取消"));
         Refresh();
     }
+}
+
+void CanvasPanel::OnMiddleDown(wxMouseEvent& evt) {
+    SetFocus();
+    m_panning = true;
+    m_panStartMouse = evt.GetPosition();
+    m_panStartOrigin = m_origin;
+    if (!HasCapture()) {
+        CaptureMouse();
+    }
+    SetCursor(wxCursor(wxCURSOR_SIZING));
+    SetStatus(U8("平移视图 —— 拖动中,松开结束(滚轮也可滚动)"));
+    evt.Skip();
+}
+
+void CanvasPanel::OnMiddleUp(wxMouseEvent& evt) {
+    if (m_panning) {
+        m_panning = false;
+        if (HasCapture()) {
+            ReleaseMouse();
+        }
+        SetCursor(wxNullCursor);
+        SetStatus(wxString::Format(U8("视图已平移:原点偏移 (%d, %d)"), m_origin.x, m_origin.y));
+        Refresh();
+    }
+    evt.Skip();
+}
+
+void CanvasPanel::OnMouseWheel(wxMouseEvent& evt) {
+    // 滚轮 = 纵向滚动,Shift+滚轮(或触摸板横扫)= 横向滚动;步长取一个栅格
+    const int rotation = evt.GetWheelRotation();
+    if (rotation == 0) {
+        evt.Skip();
+        return;
+    }
+    const int lines = evt.GetLinesPerAction() > 0 ? evt.GetLinesPerAction() : 1;
+    const int amount = static_cast<int>((rotation / 120.0) * kGridStep * lines * m_scale);
+    const bool horizontal = evt.ShiftDown() || evt.GetWheelAxis() == wxMOUSE_WHEEL_HORIZONTAL;
+    PanBy(horizontal ? wxPoint(amount, 0) : wxPoint(0, amount));
+    evt.Skip();
 }
 
 void CanvasPanel::OnKeyDown(wxKeyEvent& evt) {
@@ -609,7 +685,24 @@ CanvasPanel::SymbolSize CanvasPanel::SizeOf(const std::string& type) {
 }
 
 const editor::Component* CanvasPanel::Find(const std::string& id) const {
-    return m_model == nullptr ? nullptr : m_model->findComponent(id);
+    if (m_model == nullptr) {
+        return nullptr;
+    }
+    RebuildIndexIfNeeded();
+    const auto it = m_index.find(id);
+    return it == m_index.end() ? nullptr : it->second;
+}
+
+void CanvasPanel::RebuildIndexIfNeeded() const {
+    if (!m_indexDirty) {
+        return;
+    }
+    m_index.clear();
+    m_index.reserve(S().components.size());
+    for (const auto& c : S().components) {
+        m_index.emplace(c.id, &c);
+    }
+    m_indexDirty = false;
 }
 
 const editor::Schematic& CanvasPanel::S() const {
@@ -665,21 +758,40 @@ editor::Point CanvasPanel::ToLogical(const wxPoint& p) const {
 
 void CanvasPanel::DrawGrid(wxDC& dc) const {
     const wxSize sz = GetClientSize();
+    wxRect clip;
+    if (!dc.GetClippingBox(clip) || clip.IsEmpty()) {
+        clip = wxRect(0, 0, sz.x, sz.y);
+    }
+
+    const int step = static_cast<int>(kGridStep * m_scale);
+    const int major = step * kGridMajor;
+    const int xEnd = clip.x + clip.width;
+    const int yEnd = clip.y + clip.height;
+
+    // 网格线锚在逻辑坐标原点(平移后仍与 20 栅格对齐),并且只在需要重绘的区域内画
+    const auto firstLine = [](int from, int origin, int stepPx) {
+        const int diff = from - origin;
+        int k = diff / stepPx;
+        if (diff < 0 && diff % stepPx != 0) {
+            --k;
+        }
+        return origin + k * stepPx;
+    };
 
     dc.SetPen(wxPen(wxColour(235, 235, 235), 1));        // 细线
-    for (int x = 0; x <= sz.x; x += kGridStep) {
-        dc.DrawLine(x, 0, x, sz.y);
+    for (int x = firstLine(clip.x, m_origin.x, step); x <= xEnd; x += step) {
+        dc.DrawLine(x, clip.y, x, yEnd);
     }
-    for (int y = 0; y <= sz.y; y += kGridStep) {
-        dc.DrawLine(0, y, sz.x, y);
+    for (int y = firstLine(clip.y, m_origin.y, step); y <= yEnd; y += step) {
+        dc.DrawLine(clip.x, y, xEnd, y);
     }
 
     dc.SetPen(wxPen(wxColour(215, 215, 215), 1));        // 粗线
-    for (int x = 0; x <= sz.x; x += kGridStep * kGridMajor) {
-        dc.DrawLine(x, 0, x, sz.y);
+    for (int x = firstLine(clip.x, m_origin.x, major); x <= xEnd; x += major) {
+        dc.DrawLine(x, clip.y, x, yEnd);
     }
-    for (int y = 0; y <= sz.y; y += kGridStep * kGridMajor) {
-        dc.DrawLine(0, y, sz.x, y);
+    for (int y = firstLine(clip.y, m_origin.y, major); y <= yEnd; y += major) {
+        dc.DrawLine(clip.x, y, xEnd, y);
     }
 }
 
@@ -855,6 +967,7 @@ void CanvasPanel::EndInteraction() {
     m_mode = Mode::Idle;
     m_dragId.clear();
     m_wireSnap = HitResult{};
+    m_bandRect = wxRect(-1, -1, 0, 0);
 }
 
 void CanvasPanel::CancelInteraction(const wxString& status) {
@@ -878,7 +991,126 @@ void CanvasPanel::NotifySelection() {
 }
 
 void CanvasPanel::NotifyChanged() {
+    m_indexDirty = true;          // 元件可能增删,索引缓存下次访问时重建
     if (m_onChanged) {
         m_onChanged();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 视图平移(issue 1):坐标换算已经集中在 ToScreen/ToLogical,
+// 所以平移只改 m_origin —— 绘制与命中检测都不需要改。
+// ---------------------------------------------------------------------------
+
+void CanvasPanel::PanBy(const wxPoint& deltaDevice) {
+    m_origin += deltaDevice;
+    ClampOrigin();
+    Refresh();
+}
+
+wxRect CanvasPanel::WorldRectLogical() const {
+    wxRect world;
+    bool first = true;
+    for (const auto& c : S().components) {
+        const SymbolSize sz = SizeOf(c.type);
+        const wxRect cr(c.pos.x - sz.w / 2 - 60, c.pos.y - sz.h / 2 - 40,
+                        sz.w + 120, sz.h + 80);          // 含标签与引脚余量
+        if (first) {
+            world = cr;
+            first = false;
+        } else {
+            world.Union(cr);
+        }
+    }
+    if (first) {
+        world = wxRect(0, 0, 1200, 800);                 // 空文档也给一片可平移的世界
+    }
+    return world;
+}
+
+void CanvasPanel::ClampOrigin() {
+    const wxSize vp = GetClientSize();
+    const wxRect world = WorldRectLogical();
+    const int left = static_cast<int>(world.x * m_scale);
+    const int top = static_cast<int>(world.y * m_scale);
+    const int right = static_cast<int>((world.x + world.width) * m_scale);
+    const int bottom = static_cast<int>((world.y + world.height) * m_scale);
+
+    // 内容至少留 kPanKeep 像素在视口里,防止把原理图"推丢"
+    const int minX = -right + kPanKeep;
+    const int maxX = vp.x - left - kPanKeep;
+    const int minY = -bottom + kPanKeep;
+    const int maxY = vp.y - top - kPanKeep;
+
+    m_origin.x = std::max(minX, std::min(maxX, m_origin.x));
+    m_origin.y = std::max(minY, std::min(maxY, m_origin.y));
+}
+
+// ---------------------------------------------------------------------------
+// 局部重绘(issue 4):拖拽 / 橡皮筋 / 悬停只刷新受影响的小矩形,
+// 网格绘制也只在重绘区域内循环。
+// ---------------------------------------------------------------------------
+
+wxRect CanvasPanel::ScreenRectOf(const editor::Component& c, int margin) const {
+    const SymbolSize sz = SizeOf(c.type);
+    const wxPoint o = ToScreen(c.pos);
+    return wxRect(o.x - sz.w / 2 - margin, o.y - sz.h / 2 - margin,
+                  sz.w + 2 * margin, sz.h + 2 * margin);
+}
+
+wxRect CanvasPanel::ScreenRectOfWire(const editor::Wire& w, int margin) const {
+    editor::Point a;
+    editor::Point b;
+    if (!PinRefLogicalPos(w.from, &a) || !PinRefLogicalPos(w.to, &b)) {
+        return wxRect();
+    }
+    wxRect r(ToScreen(a), ToScreen(b));
+    r.Inflate(margin);
+    return r;
+}
+
+wxRect CanvasPanel::RubberBandScreenRect() const {
+    if (m_mode != Mode::DrawingWire) {
+        return wxRect();
+    }
+    editor::Point start;
+    if (!PinRefLogicalPos(m_wireFrom, &start)) {
+        return wxRect();
+    }
+    editor::Point end = m_mouseLogical;
+    if (m_wireSnap.IsPin()) {
+        editor::Point snapped;
+        if (PinRefLogicalPos(editor::PinRef{m_wireSnap.id, m_wireSnap.pinIndex}, &snapped)) {
+            end = snapped;
+        }
+    }
+    wxRect r(ToScreen(start), ToScreen(end));
+    r.Inflate(kWireHitR * 2);                            // 覆盖线宽与端点小圆
+    return r;
+}
+
+void CanvasPanel::RefreshComponentArea(const std::string& id) {
+    const editor::Component* c = Find(id);
+    if (c == nullptr) {
+        return;
+    }
+    wxRect r = ScreenRectOf(*c, kCmpMargin);
+    for (const auto& w : S().wires) {                    // 与它相连的导线端点也会动
+        if (w.from.componentId == id || w.to.componentId == id) {
+            r.Union(ScreenRectOfWire(w, 6));
+        }
+    }
+    if (!r.IsEmpty()) {
+        RefreshRect(r);
+    }
+}
+
+void CanvasPanel::RefreshRubberBandArea(const wxRect& previous) {
+    if (!previous.IsEmpty()) {
+        RefreshRect(previous);                           // 擦掉上一帧的橡皮筋
+    }
+    const wxRect now = RubberBandScreenRect();
+    if (!now.IsEmpty()) {
+        RefreshRect(now);
     }
 }
