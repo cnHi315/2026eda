@@ -31,3 +31,6 @@
 | C-T-06 | 调 `pinTemplate("SWITCH")` | 2 引脚:A(-50,0) 输入,Y(50,0) 输出 | | |
 | C-T-07 | 调 `pinTemplate("LED")` | 2 引脚:A(-50,0) 输入,K(50,0) 输出 | | |
 | C-T-08 | 调 `pinTemplate("UNKNOWN")` | 返回空 vector,程序不崩溃 | | |	
+| C-T-09 | 调 `pinTemplate("SWITCH")` | 1 引脚:Y 输出(50,0),单脚源模型(第 4 周定稿) | | |
+| C-T-10 | 调 `pinTemplate("LED")` | 1 引脚:A 输入(-50,0),单脚汇模型(第 4 周定稿) | | |
+| C-T-11 | 调 `pinTemplate("UNKNOWN")` | 返回空 vector,画布拒绝放置 | | |
