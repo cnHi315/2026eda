@@ -1,8 +1,5 @@
 #include "simulation/simulator.h"
 #include <iostream>
-#include <cassert>
-#include <unordered_map>
-#include <algorithm>
 
 namespace editor {
 

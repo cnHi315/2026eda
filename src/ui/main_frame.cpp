@@ -54,6 +54,9 @@ void UiMainFrame::BuildMenuBar() {
     fileMenu->Append(wxID_EXIT, U8("退出(&Q)\tCtrl+Q"), U8("退出程序"));
 
     auto* editMenu = new wxMenu;
+    editMenu->Append(wxID_UNDO, U8("撤销(&U)\tCtrl+Z"), U8("回退上一步编辑"));
+    editMenu->Append(wxID_REDO, U8("重做(&R)\tCtrl+Y"), U8("前进到下一步"));
+    editMenu->AppendSeparator();
     editMenu->Append(ID_DELETE_SEL, U8("删除选中(&D)\tDel"),
                      U8("删除选中的元件或导线"));
 
@@ -65,6 +68,13 @@ void UiMainFrame::BuildMenuBar() {
 
 void UiMainFrame::BuildToolBar() {
     auto* tb = CreateToolBar();
+    tb->AddTool(wxID_UNDO, U8("撤销"),
+                wxArtProvider::GetBitmap(wxART_UNDO, wxART_TOOLBAR),
+                U8("撤销 (Ctrl+Z)"));
+    tb->AddTool(wxID_REDO, U8("重做"),
+                wxArtProvider::GetBitmap(wxART_REDO, wxART_TOOLBAR),
+                U8("重做 (Ctrl+Y)"));
+    tb->AddSeparator();
     tb->AddTool(wxID_NEW, U8("新建"),
                 wxArtProvider::GetBitmap(wxART_NEW, wxART_TOOLBAR),
                 U8("新建空白原理图 (Ctrl+N)"));
@@ -118,6 +128,8 @@ void UiMainFrame::BuildLayout() {
 
 void UiMainFrame::BindCommands() {
     // 菜单与工具栏走同一批处理函数
+    Bind(wxEVT_MENU, &UiMainFrame::OnUndo, this, wxID_UNDO);
+    Bind(wxEVT_MENU, &UiMainFrame::OnRedo, this, wxID_REDO);
     Bind(wxEVT_MENU, &UiMainFrame::OnNew, this, wxID_NEW);
     Bind(wxEVT_MENU, &UiMainFrame::OnOpen, this, wxID_OPEN);
     Bind(wxEVT_MENU, &UiMainFrame::OnSave, this, wxID_SAVE);
@@ -130,6 +142,12 @@ void UiMainFrame::BindCommands() {
     Bind(wxEVT_TOOL, &UiMainFrame::OnOpen, this, wxID_OPEN);
     Bind(wxEVT_TOOL, &UiMainFrame::OnSave, this, wxID_SAVE);
     Bind(wxEVT_TOOL, &UiMainFrame::OnExportNetlist, this, ID_EXPORT);
+
+    // 撤销 / 重做:菜单与工具栏都按"有没有东西可撤"置灰
+    Bind(wxEVT_TOOL, &UiMainFrame::OnUndo, this, wxID_UNDO);
+    Bind(wxEVT_TOOL, &UiMainFrame::OnRedo, this, wxID_REDO);
+    Bind(wxEVT_UPDATE_UI, &UiMainFrame::OnUpdateUndo, this, wxID_UNDO);
+    Bind(wxEVT_UPDATE_UI, &UiMainFrame::OnUpdateRedo, this, wxID_REDO);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +162,7 @@ void UiMainFrame::OnNew(wxCommandEvent&) {
     m_model.loadFrom(editor::Schematic{});
     m_path.clear();
     m_canvas->OnDocumentReplaced();
+    m_canvas->ClearHistory();                    // 新文档不继承旧历史
     UpdateTitle();
     RefreshCounts();
     SetStatusText(U8("已新建空白原理图 —— 从左侧元件库选元件,点画布放置"), 0);
@@ -166,6 +185,7 @@ void UiMainFrame::OnOpen(wxCommandEvent&) {
     m_model.loadFrom(loaded);
     m_path = dlg.GetPath();
     m_canvas->OnDocumentReplaced();
+    m_canvas->ClearHistory();                    // 打开新文件后撤销栈从零开始
     UpdateTitle();
     RefreshCounts();
     SetStatusText(U8("已打开:") + m_path + U8("  (开关默认关闭)"), 0);
@@ -221,6 +241,26 @@ void UiMainFrame::OnDeleteSelection(wxCommandEvent&) {
     if (!m_canvas->DeleteSelection()) {
         SetStatusText(U8("没有选中任何对象"), 0);
     }
+}
+
+void UiMainFrame::OnUndo(wxCommandEvent&) {
+    if (!m_canvas->Undo()) {
+        SetStatusText(U8("没有可撤销的操作"), 0);
+    }
+}
+
+void UiMainFrame::OnRedo(wxCommandEvent&) {
+    if (!m_canvas->Redo()) {
+        SetStatusText(U8("没有可重做的操作"), 0);
+    }
+}
+
+void UiMainFrame::OnUpdateUndo(wxUpdateUIEvent& evt) {
+    evt.Enable(m_canvas != nullptr && m_canvas->CanUndo());
+}
+
+void UiMainFrame::OnUpdateRedo(wxUpdateUIEvent& evt) {
+    evt.Enable(m_canvas != nullptr && m_canvas->CanRedo());
 }
 
 // ---------------------------------------------------------------------------

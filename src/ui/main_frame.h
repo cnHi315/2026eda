@@ -33,6 +33,10 @@ private:
     void OnSaveAs(wxCommandEvent& evt);
     void OnExportNetlist(wxCommandEvent& evt);
     void OnDeleteSelection(wxCommandEvent& evt);
+    void OnUndo(wxCommandEvent& evt);
+    void OnRedo(wxCommandEvent& evt);
+    void OnUpdateUndo(wxUpdateUIEvent& evt);
+    void OnUpdateRedo(wxUpdateUIEvent& evt);
 
     bool SaveDocument(const wxString& path);
     std::string Utf8Path(const wxString& path) const;

@@ -17,6 +17,7 @@
 #include <wx/panel.h>
 
 #include <functional>
+#include <deque>
 #include <string>
 #include <unordered_map>
 
@@ -51,6 +52,15 @@ public:
 
     /// 删除当前选中的元件 / 导线(Delete 键与"编辑 → 删除"共用)。
     bool DeleteSelection();
+
+    // —— 撤销 / 重做(F-06,快照式)——
+    //  快照只存原理图数据(Schematic);选中态与开关挡位属于 UI 状态,不入栈,
+    //  撤销后由 OnDocumentReplaced() 统一清空(状态栏会说明这一点)。
+    bool CanUndo() const { return !m_undo.empty(); }
+    bool CanRedo() const { return !m_redo.empty(); }
+    bool Undo();
+    bool Redo();
+    void ClearHistory();
 
     /// 文档被替换(新建 / 打开)之后调用:清选中、清开关状态、重建仿真。
     void OnDocumentReplaced();
@@ -137,7 +147,8 @@ private:
 
     // —— 写操作(全部走 model) ——
     bool PlaceAt(const editor::Point& logical);
-    void MoveComponentTo(const std::string& id, const editor::Point& pos);
+    void MoveComponentTo(const std::string& id, const editor::Point& pos,
+                         bool recordHistory);
     bool CanConnect(const editor::PinRef& from, const editor::PinRef& to,
                     wxString* reason) const;
     void AddWire(const editor::PinRef& from, const editor::PinRef& to);
@@ -154,6 +165,7 @@ private:
     void SetStatus(const wxString& text);
     void NotifySelection();
     void NotifyChanged();
+    void PushUndoSnapshot(const editor::Schematic& before);
 
     editor::SchematicModel* m_model = nullptr;   ///< 不持有,由 MainFrame 管理
     editor::Simulator* m_sim = nullptr;          ///< 不持有
@@ -181,12 +193,17 @@ private:
     editor::Point m_dragGrab{0, 0};
     editor::Point m_dragOrig{0, 0};
     bool m_dragMoved = false;
+    editor::Schematic m_dragBefore;     ///< 按下时的快照(抬起提交后才入栈)
     editor::PinRef m_wireFrom;
     editor::Point m_mouseLogical{0, 0};
     HitResult m_wireSnap;
 
     /// 开关状态(默认不在表里 = 关闭 / Low);v1 不持久化。
     std::unordered_map<std::string, editor::SignalLevel> m_switchLevel;
+
+    /// 撤销 / 重做快照栈(上限 kUndoDepth,超出丢最旧)
+    std::deque<editor::Schematic> m_undo;
+    std::deque<editor::Schematic> m_redo;
 
     StatusCallback m_status;
     SelectionCallback m_onSelection;
@@ -202,4 +219,5 @@ private:
     static constexpr int kWireHitR  = 4;
     static constexpr int kPanKeep   = 40;   ///< 平移时至少留在视口内的内容像素
     static constexpr int kCmpMargin = 26;   ///< 局部重绘:元件外扩(含标签/选中框)
+    static constexpr size_t kUndoDepth = 50; ///< 撤销栈深度上限
 };
