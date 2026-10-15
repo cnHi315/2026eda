@@ -152,6 +152,7 @@ void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
         m_mode = Mode::DraggingComponent;
         m_dragId = hit.id;
         m_dragOrig = c->pos;
+        m_dragBefore = S();                              // 按下时取快照(抬起确认移动过才入栈)
         m_dragGrab = editor::Point{p.x - c->pos.x, p.y - c->pos.y};
         m_dragMoved = false;
         m_sel = hit;
@@ -227,7 +228,7 @@ void CanvasPanel::OnMotion(wxMouseEvent& evt) {
                 }
             }
         }
-        MoveComponentTo(m_dragId, SnapToGrid(raw));
+        MoveComponentTo(m_dragId, SnapToGrid(raw), /*recordHistory=*/false);
         if (!oldArea.IsEmpty()) {
             RefreshRect(oldArea);
         }
@@ -277,11 +278,11 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
         if (m_dragMoved) {
             const editor::Point target =
                 SnapToGrid(editor::Point{p.x - m_dragGrab.x, p.y - m_dragGrab.y});
-            MoveComponentTo(id, target);                 // model.moveElement
+            MoveComponentTo(id, target, /*recordHistory=*/true);   // model.moveElement(入栈)
             SetStatus(U8("放下 ") + wxString::FromUTF8(id.c_str()) + U8(" 位置:(") +
                       wxString::Format("%d,%d", target.x, target.y) + U8(")"));
         } else {
-            MoveComponentTo(id, m_dragOrig);             // 单击:不产生位移,只选中
+            MoveComponentTo(id, m_dragOrig, /*recordHistory=*/false);  // 单击:只选中,不入栈
             SetStatus(U8("选中 ") + wxString::FromUTF8(id.c_str()));
         }
         EndInteraction();
@@ -380,7 +381,7 @@ void CanvasPanel::OnKeyDown(wxKeyEvent& evt) {
 
     if (code == WXK_ESCAPE) {
         if (m_mode == Mode::DraggingComponent) {
-            MoveComponentTo(m_dragId, m_dragOrig);       // Esc:把元件放回原位
+            MoveComponentTo(m_dragId, m_dragOrig, /*recordHistory=*/false);  // Esc:还原,不入栈
             CancelInteraction(U8("已取消拖动(位置已还原)"));
             Refresh();
             return;
@@ -413,12 +414,14 @@ bool CanvasPanel::PlaceAt(const editor::Point& logical) {
         return false;
     }
     const editor::Point pos = SnapToGrid(logical);
+    const editor::Schematic before = S();                 // 失败不入栈,先留一份旧数据
     const std::string id = m_model->addElement(m_placeType, pos);
     if (id.empty()) {
         SetStatus(U8("放置失败:未知元件类型 ") + wxString::FromUTF8(m_placeType.c_str()));
         return false;
     }
 
+    PushUndoSnapshot(before);
     ResyncSimulation();
     HitResult sel;
     sel.kind = HitKind::Component;
@@ -433,7 +436,8 @@ bool CanvasPanel::PlaceAt(const editor::Point& logical) {
     return true;
 }
 
-void CanvasPanel::MoveComponentTo(const std::string& id, const editor::Point& pos) {
+void CanvasPanel::MoveComponentTo(const std::string& id, const editor::Point& pos,
+                                  bool recordHistory) {
     if (m_model == nullptr) {
         return;
     }
@@ -441,7 +445,11 @@ void CanvasPanel::MoveComponentTo(const std::string& id, const editor::Point& po
     if (before != nullptr && before->pos.x == pos.x && before->pos.y == pos.y) {
         return;                                          // 没变就不动,省一次重绘
     }
+    const editor::Schematic snapshot = recordHistory ? S() : editor::Schematic{};
     if (m_model->moveElement(id, pos)) {
+        if (recordHistory) {
+            PushUndoSnapshot(snapshot);
+        }
         NotifyChanged();
     }
 }
@@ -488,12 +496,14 @@ void CanvasPanel::AddWire(const editor::PinRef& from, const editor::PinRef& to) 
     if (m_model == nullptr) {
         return;
     }
+    const editor::Schematic before = S();
     const std::string netId = m_model->addWire(from, to);
     if (netId.empty()) {
         SetStatus(U8("连线未创建:模型拒绝了这条连线"));
         return;
     }
 
+    PushUndoSnapshot(before);
     ResyncSimulation();
     HitResult sel;                                       // 选中刚加的线,给个反馈
     sel.kind = HitKind::Wire;
@@ -534,7 +544,9 @@ bool CanvasPanel::DeleteSelection() {
     }
     if (m_sel.IsComponent() || m_sel.IsPin()) {
         const std::string id = m_sel.id;
+        const editor::Schematic before = S();
         if (m_model->removeElement(id)) {
+            PushUndoSnapshot(before);
             m_switchLevel.erase(id);
             m_sel = HitResult{};
             ResyncSimulation();
@@ -549,7 +561,9 @@ bool CanvasPanel::DeleteSelection() {
     }
     if (m_sel.IsWire()) {
         const std::string id = m_sel.id;
+        const editor::Schematic before = S();
         if (m_model->removeWire(id)) {
+            PushUndoSnapshot(before);
             m_sel = HitResult{};
             ResyncSimulation();
             SetStatus(U8("已删除导线 ") + wxString::FromUTF8(id.c_str()));
@@ -995,6 +1009,60 @@ void CanvasPanel::NotifyChanged() {
     if (m_onChanged) {
         m_onChanged();
     }
+}
+
+// ---------------------------------------------------------------------------
+// 撤销 / 重做(F-06,快照式)
+//
+// 设计(第 5 周定稿):
+//   · 快照 = 整份 editor::Schematic(model.data());靠 loadFrom() 恢复,
+//     nets 会按 wires 重算,所以快照天然自洽,不需要写反向操作;
+//   · 只记"真正的编辑":放置 / 拖动(抬起且确实移动过)/ 连线 / 删除元件与导线。
+//     单击选中、Esc 还原、拨开关(只改仿真状态,不改原理图)都不入栈;
+//   · 任何新编辑都会清空重做栈;栈深上限 kUndoDepth,超出丢最旧;
+//   · 撤销/重做后走 OnDocumentReplaced():清选中、清开关挡位、重建仿真、重绘 ——
+//     所以开关会回到"关闭",状态栏会提示这一点(v1 不把仿真状态纳入快照)。
+// ---------------------------------------------------------------------------
+
+void CanvasPanel::PushUndoSnapshot(const editor::Schematic& before) {
+    m_undo.push_back(before);
+    while (m_undo.size() > kUndoDepth) {
+        m_undo.pop_front();
+    }
+    m_redo.clear();                                      // 新编辑使"重做"失效
+}
+
+void CanvasPanel::ClearHistory() {
+    m_undo.clear();
+    m_redo.clear();
+}
+
+bool CanvasPanel::Undo() {
+    if (m_model == nullptr || m_undo.empty()) {
+        return false;
+    }
+    m_redo.push_back(m_model->data());                   // 当前状态留给重做
+    const editor::Schematic snapshot = m_undo.back();
+    m_undo.pop_back();
+
+    m_model->loadFrom(snapshot);
+    OnDocumentReplaced();                                // 清选中 / 清开关 / 重建仿真 / 重绘
+    SetStatus(U8("已撤销(原理图回到上一步;开关回到关闭)"));
+    return true;
+}
+
+bool CanvasPanel::Redo() {
+    if (m_model == nullptr || m_redo.empty()) {
+        return false;
+    }
+    m_undo.push_back(m_model->data());
+    const editor::Schematic snapshot = m_redo.back();
+    m_redo.pop_back();
+
+    m_model->loadFrom(snapshot);
+    OnDocumentReplaced();
+    SetStatus(U8("已重做(原理图前进到下一步;开关回到关闭)"));
+    return true;
 }
 
 // ---------------------------------------------------------------------------

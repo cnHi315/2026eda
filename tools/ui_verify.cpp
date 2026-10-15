@@ -17,6 +17,8 @@
 //   mdown / mup <x> <y>     中键(平移视图;中间的移动用 move 命令)
 //   wheel <x> <y> <rot> [h] 滚轮(rot=±120 为一格;h=1 表示横向轴)
 //   perf <n> <motions>      放 n 个元件后拖一个元件跑 motions 次移动,打印耗时
+//   undo | redo             触发菜单里的撤销 / 重做
+//   new                     触发菜单里的新建(清空文档与撤销历史)
 //   esc | del
 //   info                    打印标题 / 状态栏两格 / 画布屏幕位置与尺寸
 //   quit
@@ -164,6 +166,13 @@ private:
             evt.SetEventObject(canvas);
             evt.m_keyCode = (cmd == "esc") ? WXK_ESCAPE : WXK_DELETE;
             canvas->ProcessWindowEvent(evt);
+        } else if (cmd == "undo" || cmd == "redo" || cmd == "new") {
+            const int id = (cmd == "undo")   ? wxID_UNDO
+                           : (cmd == "redo") ? wxID_REDO
+                                             : wxID_NEW;
+            wxCommandEvent evt(wxEVT_MENU, id);
+            evt.SetEventObject(frame);
+            frame->ProcessWindowEvent(evt);          // 走 MainFrame 的菜单处理函数
         }
 
         canvas->Refresh();
