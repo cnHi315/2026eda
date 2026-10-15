@@ -66,3 +66,12 @@ add_executable(io_test tests/io_test.cpp
     src/io/netlist_io.cpp
     src/model/schematic_model.cpp
     src/components/component_library.cpp)
+
+# ---------------------------------------------------------------------------
+# 控制台测试目标:A-D 模块联调(SchematicModel 造数据 → Simulator 跑仿真)
+#   ./build/integration_test  (Windows 上是 build\integration_test.exe)
+# ---------------------------------------------------------------------------
+add_executable(integration_test tests/integration_test.cpp
+    src/model/schematic_model.cpp
+    src/components/component_library.cpp
+    src/simulation/simulator.cpp)
