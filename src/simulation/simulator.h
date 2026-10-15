@@ -30,6 +30,10 @@ public:
     /// 查询某引脚当前电平。
     SignalLevel query(const std::string& componentId, int pinIndex) const;
 
+    /// 是否存在组合环路(反馈路径)。load() 时按连接拓扑分析一次并缓存。
+    /// UI 可在每次 step() 后查询,为真时在状态栏提示"检测到环路"。
+    bool hasCombinationalLoop() const;
+
 private:
     // --- 本周新增内部状态与辅助函数 ---
 
@@ -41,6 +45,9 @@ private:
 
     /// 记录各引脚当前电平：Key 为 "元件ID#引脚索引"，例如 "U1#0"
     std::unordered_map<std::string, SignalLevel> m_pinStates;
+
+    /// 组合环路检测结果(load() 时更新,经 hasCombinationalLoop() 暴露给 UI)
+    bool m_hasLoop = false;
 
     /// 生成查找 Key
     static std::string makeKey(const std::string& compId, int pinIndex);

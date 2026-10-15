@@ -14,9 +14,98 @@ void Simulator::setSignalCallback(Callback cb) {
     m_callback = cb;
 }
 
+// ---------------------------------------------------------------------------
+// D3 组合环路检测(仅本文件内部实现,不新增对外接口)
+//   结构化判定:只看连接拓扑,与开关电平无关。把每个元件当一个节点,对每条 net
+//   凡"输出脚 -> 输入脚"都连一条有向边(信号由驱动元件流向被驱动元件);若该有
+//   向图存在环,说明信号能沿反馈路径绕回自身 => 组合环,step() 的有限轮迭代无法
+//   保证收敛。
+//   为什么不用"迭代到不收敛"判定:组合环结果依赖具体电平,且 step() 当前只迭代
+//   两轮,运行时不收敛根本触发不到;结构判定能在刚连出环的那一刻给出确定答案。
+// ---------------------------------------------------------------------------
+static bool detectCombinationalLoop(const Schematic& schematic) {
+    // 1. 元件 id -> 下标
+    std::unordered_map<std::string, size_t> index;
+    for (size_t i = 0; i < schematic.components.size(); ++i) {
+        index[schematic.components[i].id] = i;
+    }
+
+    // 判断某引脚是否为输出脚(输出脚才是信号的驱动端)
+    auto isOutput = [&schematic, &index](const PinRef& p) -> bool {
+        auto it = index.find(p.componentId);
+        if (it == index.end()) {
+            return false;
+        }
+        const Component& c = schematic.components[it->second];
+        if (p.pinIndex < 0 || p.pinIndex >= static_cast<int>(c.pins.size())) {
+            return false;
+        }
+        return c.pins[p.pinIndex].direction == PinDirection::Output;
+    };
+
+    // 2. 建"驱动元件 -> 被驱动元件"的有向图:同一 net 里每个输出脚连到每个输入脚
+    std::vector<std::vector<size_t>> adj(schematic.components.size());
+    for (const auto& net : schematic.nets) {
+        for (const auto& from : net.pins) {
+            if (!isOutput(from)) {
+                continue;                       // 只从输出脚出发
+            }
+            const auto fi = index.find(from.componentId);
+            if (fi == index.end()) {
+                continue;
+            }
+            for (const auto& to : net.pins) {
+                if (isOutput(to)) {
+                    continue;                   // 只连到输入脚
+                }
+                const auto ti = index.find(to.componentId);
+                if (ti == index.end()) {
+                    continue;
+                }
+                adj[fi->second].push_back(ti->second);   // 允许自环(输出接回本元件输入)
+            }
+        }
+    }
+
+    // 3. 三色法 DFS 找环:走到"灰色"节点说明绕回了本轮路径 => 有环
+    enum Color { White, Gray, Black };
+    std::vector<int> color(schematic.components.size(), White);
+    std::function<bool(size_t)> dfs = [&adj, &color, &dfs](size_t u) -> bool {
+        color[u] = Gray;
+        for (size_t v : adj[u]) {
+            if (color[v] == Gray) {
+                return true;                    // 回边 => 环
+            }
+            if (color[v] == White && dfs(v)) {
+                return true;
+            }
+        }
+        color[u] = Black;
+        return false;
+    };
+    for (size_t i = 0; i < adj.size(); ++i) {
+        if (color[i] == White && dfs(i)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Simulator::load(const Schematic& schematic) {
     m_schematic = schematic;
     m_pinStates.clear();
+    // 环路检测(结构性,与电平无关),结果缓存供 hasCombinationalLoop() 查询。
+    m_hasLoop = detectCombinationalLoop(m_schematic);
+    if (m_hasLoop) {
+        // 控制台留一行警告(与"单步回调上限"警告同一风格);
+        // 状态栏提示由 B 调 hasCombinationalLoop() 自行显示。
+        std::cerr << "[Warning] 检测到环路:电路存在组合反馈,仿真结果可能不稳定" << std::endl;
+    }
+}
+
+// 组合环路查询:UI 每次 step() 后调用,为真时在状态栏提示"检测到环路"。
+bool Simulator::hasCombinationalLoop() const {
+    return m_hasLoop;
 }
 
 void Simulator::setInput(const std::string& componentId, int pinIndex, SignalLevel level) {
@@ -205,62 +294,5 @@ void testAndGateTruthTable() {
     std::cout << ">>> [PASS] 单引脚模型适配及回调熔断保护验证全部通过！(总触发回调 "
               << callbackFireCount << " 次) <<<" << std::endl;
 }
-
-// -------------------------------------------------------------------
-// 任务#1 预留: SchematicModel 真实数据联调测试
-//
-// 启用条件:
-//   1) A 完成 SchematicModel::addElement (当前返回空串,尚未实现)
-//   2) CMakeLists 将 src/model/schematic_model.cpp 加入 sim_test 目标
-//   3) 在 tests/main_test.cpp 中调用 testSchematicModelIntegration()
-//
-// 启用方法: 去掉下面的 #if 0 / #endif
-//
-// 2026-10-08(合并 main 时由 B 最小修复):这段代码原先少了 #if 0,而且 #include 落在
-// namespace editor 内部 —— 头文件里的 namespace editor 会被再次嵌套,编译器把类名解析成
-// editor::editor::SchematicModel,整个仓库(Linux 与 Windows)都编不过。先按注释的原意
-// 补上守卫,恢复构建。真正启用时建议按 README 的约定把这段挪到 tests/ 去。
-#if 0
-#include "../model/schematic_model.h"
-void testSchematicModelIntegration() {
-    std::cout << "\n>>> 开始运行 D 任务: SchematicModel 真实数据联调 <<<" << std::endl;
-
-    SchematicModel model;
-    // 用 A 的 addElement 造元件
-    std::string swA = model.addElement("SWITCH", {0, 0});
-    std::string swB = model.addElement("SWITCH", {0, 50});
-    std::string u   = model.addElement("AND", {100, 25});
-    std::string led = model.addElement("LED", {200, 25});
-    assert(!swA.empty() && !swB.empty() && !u.empty() && !led.empty());
-
-    // 用 A 的 addWire 造连线
-    assert(!model.addWire({swA, 0}, {u, 0}).empty());
-    assert(!model.addWire({swB, 0}, {u, 1}).empty());
-    assert(!model.addWire({u, 2}, {led, 0}).empty());
-
-    Simulator sim;
-    sim.load(model.data());              // 喂真实数据给 D 的 load()
-    sim.setSignalCallback([](PinRef pin, SignalLevel lvl) {
-        std::cout << "  [回调] " << pin.componentId << "#" << pin.pinIndex
-                  << " -> " << (lvl == SignalLevel::High ? "High" : "Low") << std::endl;
-    });
-
-    // 与门真值表
-    struct { SignalLevel a, b, exp; } cases[] = {
-        {SignalLevel::Low,  SignalLevel::Low,  SignalLevel::Low},
-        {SignalLevel::Low,  SignalLevel::High, SignalLevel::Low},
-        {SignalLevel::High, SignalLevel::Low,  SignalLevel::Low},
-        {SignalLevel::High, SignalLevel::High, SignalLevel::High},
-    };
-    for (const auto& tc : cases) {
-        sim.setInput(swA, 0, tc.a);
-        sim.setInput(swB, 0, tc.b);
-        sim.step();
-        SignalLevel out = sim.query(led, 0);
-        assert(out == tc.exp);
-    }
-    std::cout << ">>> [PASS] SchematicModel 真实数据联调通过！<<<" << std::endl;
-}
-#endif
 
 } // namespace editor
