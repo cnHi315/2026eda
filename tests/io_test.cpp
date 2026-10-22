@@ -242,6 +242,60 @@ void testExportEdgeCases() {
     CHECK(io.save(m.data(), tmpPath("no_such_dir/x.json")) == false);
 }
 
+/// 打开文件之后继续编辑 —— 演示里很常见的路径(打开 demo.json 改一下再存)。
+/// 重点看新生成的 id 会不会和文件里已有的撞、nets 会不会跟着更新。
+void testEditAfterLoad() {
+    std::cout << "\n== 6. 打开之后继续编辑 ==\n";
+    const std::string path = tmpPath("edit_after_load.json");
+    NetlistIO io;
+
+    // 1. 先造一份小电路存盘:SW1.Y — LED1.A
+    {
+        SchematicModel m;
+        m.addElement("SWITCH", {0, 0});     // SW1
+        m.addElement("LED", {200, 0});      // LED1
+        m.addWire({"SW1", 0}, {"LED1", 0}); // wire1
+        CHECK(m.data().components.size() == 2);
+        CHECK(m.data().wires.size() == 1);
+        CHECK(io.save(m.data(), path));
+    }
+
+    // 2. 读回来
+    Schematic loaded;
+    CHECK(io.load(loaded, path));
+    SchematicModel model;
+    model.loadFrom(loaded);
+    CHECK(model.data().components.size() == 2);
+    CHECK(model.data().nets.size() == 1);
+
+    // 3. 继续编辑:id 必须接着往后排,不能和 SW1 / LED1 / wire1 撞
+    const std::string andId = model.addElement("AND", {400, 100});
+    const std::string sw2   = model.addElement("SWITCH", {0, 200});
+    CHECK(andId == "U1");
+    CHECK(sw2 == "SW2");
+
+    const std::string n1 = model.addWire({"SW1", 0}, {andId, 0});   // 并入已有网络
+    const std::string n2 = model.addWire({sw2, 0}, {andId, 1});     // 另起一个
+    CHECK(n1 == "net1");
+    CHECK(n2 == "net2");
+    CHECK(model.data().nets.size() == 2);
+    CHECK(model.data().nets[0].pins.size() == 3);   // SW1.Y + LED1.A + U1.A
+    CHECK(model.data().nets[1].pins.size() == 2);   // SW2.Y + U1.B
+
+    CHECK(model.data().wires.size() == 3);
+    CHECK(model.data().wires[1].id == "wire2");
+    CHECK(model.data().wires[2].id == "wire3");
+
+    // 4. 改完再存再开:这一轮的 id 也要原样回来
+    CHECK(io.save(model.data(), path));
+    Schematic again;
+    CHECK(io.load(again, path));
+    CHECK(again.components.size() == 4);
+    CHECK(again.wires.size() == 3);
+    CHECK(again.components[2].id == "U1");
+    CHECK(again.wires[2].id == "wire3");
+}
+
 } // namespace
 
 int main() {
@@ -254,6 +308,7 @@ int main() {
     testLoadFromRebuildsNets();
     testExportNetlist();
     testExportEdgeCases();
+    testEditAfterLoad();
 
     std::cout << "\n---- " << (g_checks - g_failures) << "/" << g_checks << " 通过 ----\n";
     return g_failures == 0 ? 0 : 1;
