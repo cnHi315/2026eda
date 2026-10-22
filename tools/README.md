@@ -21,6 +21,25 @@ g++ -std=c++17 -I src $(wx-config --cxxflags) tools/ui_verify.cpp \
     src/simulation/*.cpp $(wx-config --libs core,base,propgrid) -o /tmp/ui_verify
 ```
 
+### Windows
+
+不依赖 `wx-config`,走 CMake(这个 target 默认不构建,不影响 `CircuitEditor`):
+
+```bash
+cmake -S . -B build -DBUILD_VERIFY_TOOLS=ON
+cmake --build build --target ui_verify
+python tools/verify_mvp.py build/ui_verify.exe     # MVP 链路 9 项
+```
+
+Windows 上不用抓屏:`ui_verify` 加了一条 `pixel <x> <y>` 命令,用 `wxDC::GetPixel`
+直接读画布颜色(替代 Linux 那边的 `XGetImage`),所以 `verify_mvp.py` 是跨平台的。
+另外,`verify_mvp.py` 走临时文件重定向而不是 `capture_output` —— wx 的 GUI 程序
+在 Windows 的 `CreateProcess` 管道下拿不到 stdout。
+
+> **注意**:用 VS Code 的 CMake Tools 构建时,它 reconfigure 会读
+> `.vscode/settings.json` 里的 `cmake.configureSettings`,那里没有 `BUILD_VERIFY_TOOLS`,
+> target 就会消失。把 `"BUILD_VERIFY_TOOLS": "ON"` 一并加进那份配置即可(该文件已 gitignore)。
+
 ## 跑核对脚本
 
 ```bash

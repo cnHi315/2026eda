@@ -21,6 +21,7 @@
 //   new                     触发菜单里的新建(清空文档与撤销历史)
 //   esc | del
 //   info                    打印标题 / 状态栏两格 / 画布屏幕位置与尺寸
+//   pixel <x> <y>           读画布上某点的颜色(跨平台,替代 Linux 那边的 XGetImage)
 //   quit
 
 #include <wx/wx.h>
@@ -79,9 +80,20 @@ private:
     void OnTick(wxTimerEvent&) {
         std::string line;
         if (!std::getline(std::cin, line)) {
+            // 一条命令都没读到就被关掉 stdin —— 多半是直接双击了这个 exe。
+            // 它是给脚本喂命令用的,双击只会一闪而过,这里给个提示再退出。
+            if (!sawAnyCommand) {
+                wxMessageBox(
+                    wxString::FromUTF8("这是命令驱动的验证台,不是双击用的。\n\n"
+                                       "跑 MVP 链路核对:\n"
+                                       "    python tools/verify_mvp.py build/ui_verify.exe\n\n"
+                                       "命令清单见 tools/README.md。"),
+                    "ui_verify");
+            }
             frame->Close(true);
             return;
         }
+        sawAnyCommand = true;
         std::istringstream is(line);
         std::string cmd;
         is >> cmd;
@@ -161,6 +173,19 @@ private:
             const long ms = watch.Time();
             std::printf("PERF: n=%d motions=%d total=%ldms avg=%.2fms\n",
                         n, motions, ms, motions > 0 ? double(ms) / motions : 0.0);
+        } else if (cmd == "pixel") {
+            int x = 0;
+            int y = 0;
+            is >> x >> y;
+            canvas->Refresh();
+            canvas->Update();
+            wxClientDC dc(canvas);
+            wxColour c;
+            if (!dc.GetPixel(wxPoint(x, y), &c)) {
+                std::printf("PIXEL: %d %d n/a\n", x, y);
+            } else {
+                std::printf("PIXEL: %d %d %d %d %d\n", x, y, c.Red(), c.Green(), c.Blue());
+            }
         } else if (cmd == "esc" || cmd == "del") {
             wxKeyEvent evt(wxEVT_KEY_DOWN);
             evt.SetEventObject(canvas);
@@ -200,6 +225,7 @@ private:
     UiMainFrame* frame = nullptr;
     CanvasPanel* canvas = nullptr;
     wxTimer timer;
+    bool sawAnyCommand = false;   ///< 收到过命令没有(用来区分"脚本跑完"和"双击启动")
 };
 
 wxIMPLEMENT_APP(VerifyApp);

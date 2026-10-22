@@ -75,3 +75,18 @@ add_executable(integration_test tests/integration_test.cpp
     src/model/schematic_model.cpp
     src/components/component_library.cpp
     src/simulation/simulator.cpp)
+
+# ---------------------------------------------------------------------------
+# 开发工具:GUI 端到端验证台(tools/ui_verify.cpp)。默认不构建。
+#   cmake -S . -B build -DBUILD_VERIFY_TOOLS=ON
+#   cmake --build build --target ui_verify
+# 它是控制台驱动方式(stdin 喂命令、stdout 读状态),但仍是 WIN32 子系统程序,
+# 这样 wx 的 wxIMPLEMENT_APP 走 WinMain;stdout 由调用方重定向即可。
+# ---------------------------------------------------------------------------
+option(BUILD_VERIFY_TOOLS "构建 tools/ 下的开发验证工具" OFF)
+if(BUILD_VERIFY_TOOLS)
+    set(TOOL_SOURCES ${APP_SOURCES})
+    list(REMOVE_ITEM TOOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+    add_executable(ui_verify WIN32 tools/ui_verify.cpp ${TOOL_SOURCES})
+    target_link_libraries(ui_verify ${wxWidgets_LIBRARIES})
+endif()

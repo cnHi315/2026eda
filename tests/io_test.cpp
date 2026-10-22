@@ -4,8 +4,9 @@
 //   cmake --build build
 //   ./build/io_test          (Windows 上是 build\io_test.exe)
 //
-// 注意:要在仓库根目录下跑,临时文件写在 build/ 里(该目录已 gitignore)。
+// 临时文件写在系统临时目录,不依赖当前工作目录 —— 从哪个目录跑都一样。
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -36,8 +37,13 @@ static int g_failures = 0;
 
 namespace {
 
-const char* kJson = "build/io_test_demo.json";
-const char* kNet  = "build/io_test_demo.net";
+// 临时文件一律放系统临时目录 —— 不依赖当前工作目录,从哪个目录跑都一样
+std::string tmpPath(const std::string& name) {
+    return (std::filesystem::temp_directory_path() / ("2026eda_io_test_" + name)).string();
+}
+
+const std::string kJson = tmpPath("demo.json");
+const std::string kNet  = tmpPath("demo.net");
 
 // 注意:这里必须用 is_open()。MinGW 的 ifstream 打开失败时不置 failbit,
 // `in.good()` 会返回 true,判断文件在不在就永远是"在"。
@@ -126,18 +132,18 @@ void testBadInput() {
     Schematic s;
     s.components.push_back(Component{"KEEP", "AND", "KEEP", {7, 7}, 0, {}});
 
-    CHECK(io.load(s, "build/definitely_not_here.json") == false);
+    CHECK(io.load(s, tmpPath("definitely_not_here.json")) == false);
     CHECK(s.components.size() == 1);
     CHECK(s.components[0].id == "KEEP");
 
-    spit("build/io_test_bad.json", "{ 这不是合法的 JSON");
-    CHECK(io.load(s, "build/io_test_bad.json") == false);
+    spit(tmpPath("bad.json"), "{ 这不是合法的 JSON");
+    CHECK(io.load(s, tmpPath("bad.json")) == false);
     CHECK(s.components.size() == 1);
     CHECK(s.components[0].id == "KEEP");
 
     // 合法 JSON,但字段缺了(没有 components)
-    spit("build/io_test_nofield.json", R"({"version": 1})");
-    CHECK(io.load(s, "build/io_test_nofield.json") == false);
+    spit(tmpPath("nofield.json"), R"({"version": 1})");
+    CHECK(io.load(s, tmpPath("nofield.json")) == false);
     CHECK(s.components.size() == 1);
 }
 
@@ -159,11 +165,11 @@ void testLoadFromRebuildsNets() {
   ],
   "nets": []
 })";
-    spit("build/io_test_stale.json", stale);
+    spit(tmpPath("stale.json"), stale);
 
     NetlistIO io;
     Schematic s;
-    CHECK(io.load(s, "build/io_test_stale.json"));
+    CHECK(io.load(s, tmpPath("stale.json")));
     CHECK(s.components.size() == 2);
     CHECK(s.nets.empty());              // 文件里 nets 就是空的
 
@@ -221,17 +227,19 @@ void testExportEdgeCases() {
     NetlistIO io;
 
     const Schematic empty;
-    CHECK(io.exportNetlist(empty, "build/io_test_empty.net"));
-    const std::string e = slurp("build/io_test_empty.net");
+    CHECK(io.exportNetlist(empty, tmpPath("empty.net")));
+    const std::string e = slurp(tmpPath("empty.net"));
     CHECK(e.find("(components") != std::string::npos);
     CHECK(e.find("(nets") != std::string::npos);
     CHECK(e.find("(ref ") == std::string::npos);   // 没有元件
 
     // 目录不存在 -> 失败,而且不留垃圾
     const SchematicModel m = makeDemo();
-    CHECK(io.exportNetlist(m.data(), "build/no_such_dir/x.net") == false);
-    CHECK(!fileExists("build/no_such_dir/x.net.tmp"));
-    CHECK(io.save(m.data(), "build/no_such_dir/x.json") == false);
+    std::filesystem::remove_all(
+        std::filesystem::temp_directory_path() / "2026eda_io_test_no_such_dir");
+    CHECK(io.exportNetlist(m.data(), tmpPath("no_such_dir/x.net")) == false);
+    CHECK(!fileExists(tmpPath("no_such_dir/x.net.tmp")));
+    CHECK(io.save(m.data(), tmpPath("no_such_dir/x.json")) == false);
 }
 
 } // namespace
