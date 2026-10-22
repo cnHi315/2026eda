@@ -189,7 +189,7 @@
 - **A**:① **MVP 链路端到端自动化** —— 把 B 的验证台在 Windows 上跑起来了:它本来就是纯 wx 事件注入、没有平台专有代码,所以 **harness 一行没改就能用**;只补了一条 `pixel <x> <y>` 命令(用 `wxDC::GetPixel` 直接读画布颜色),替代 Linux 那边的 `XGetImage`。新增 `tools/verify_mvp.py`,一条命令跑完整条链路并断言:**9/9 通过,整轮 3.6s** —— 放 4 个元件(`4/0/0`)→ 连 3 根线(`4/3/3`)→ 双击两个开关 → 导线变亮绿 `(0,180,0)`、LED 点亮橙色 `(255,170,0)`。CMake 加了 `BUILD_VERIFY_TOOLS` 选项(默认 OFF,不影响别人的构建)。② 排查了一次启动失败:在工具环境里起进程时 PATH 被改写、不含 `C:\mingw64\bin`,exe 找不到 MinGW 的运行时 DLL(`libgcc_s_seh-1.dll` / `libstdc++-6.dll`)就**静默退出,零报错**。本机系统 PATH 里有这个目录,正常双击 / 从 VS Code 启动不受影响,**不需要额外放 DLL**。记这条只是提醒:换一台没装 MinGW 的机器跑演示,会撞同样的静默失败。③ 踩到两个 Windows 坑并写进 `tools/README.md`:wx 的 GUI 程序在 `CreateProcess` 管道下拿不到 stdout(改走临时文件);`subprocess` 用带 `/` 的相对路径会找不到文件(改 `abspath`)。未做:保存 / 打开 / 导出网表要弹原生文件对话框,自动化驱动不了 —— 仍然挂在 T-12(归 B)。④ 修掉 `io_test` 的一个脆弱点:临时文件原本用相对路径 `build/…`,换个工作目录跑就整片 FAIL(在 `/tmp` 和 `build/` 下都复现了);改用系统临时目录,从任意目录跑都是 61/61。⑤ 补了「**打开之后继续编辑**」的用例(22 项):打开文件后新生成的元件 / 导线 / 网络 id 不会和文件里已有的撞,再存再开 id 也仍然不变 —— 这条是演示里"打开 demo.json 改一下再存"的路径,之前完全没覆盖。`io_test` 现在 83/83。
 - **B**:
 - **C**:
-- **D**:
+- **D**:① `hasCombinationalLoop()` 补自测 —— 手写 Schematic 数据绕开 addWire 校验,覆盖 4 个场景(正常电路 false、单 NOT 自环 true、双 NOT 交叉耦合 true、经 DFF 反馈不构组合环 false);Debug 构建 sim_test 自动跑 **8/8** 通过,Release 由 `#ifndef NDEBUG` 保护跳过。② 时序元件(DFF)支持 —— `step()` 重构三阶段(两轮组合传播让 D 先稳定 → DFF 捕获 D 更新 Q → 最后一轮扩散 Q 变化);`detectCombinationalLoop` 建图时跳过连到时序 Input 的边,时序反馈不被误判为组合环;`isSequentialType()` 精确匹配 DFF/JK/SR/CLOCK/LATCH。③ 旋转确认:simulator 只读引脚索引与网络连接,不碰 `rotation`/`relPos`,纯 UI 层关注点,零改动。顺带删掉 `setPinLevel`/`evalComponent` 死声明。验证:sim_test Debug **12/12**(自测 8 + 原有 4)、Release 4/4、integration 22/22 无回归。
 
 ### 第 6 周问题
 

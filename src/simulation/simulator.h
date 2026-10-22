@@ -49,14 +49,19 @@ private:
     /// 组合环路检测结果(load() 时更新,经 hasCombinationalLoop() 暴露给 UI)
     bool m_hasLoop = false;
 
+    /// 时序元件(Q 输出)状态:key 为 DFF 等时序元件的 id
+    std::unordered_map<std::string, SignalLevel> m_ffStates;
+
     /// 生成查找 Key
     static std::string makeKey(const std::string& compId, int pinIndex);
 
-    /// 更新引脚电平并触发回调（预留：当前 step() 内用 lambda 实现，后续可抽至此处）
-    void setPinLevel(const std::string& compId, int pinIndex, SignalLevel level, bool& changed);
+    /// 判断元件类型是否为时序元件(DFF/FF/CLOCK 等):
+    /// 时序元件的反馈路径不属于组合环路,也走独立的仿真阶段
+    static bool isSequentialType(const std::string& type);
 
-    /// 根据元件类型和输入引脚电平计算输出（预留：当前 step() 内用 if-else 实现，后续可抽至此处）
-    static SignalLevel evalComponent(const std::string& type, const std::vector<SignalLevel>& inputs);
+    /// 环路检测:load() 时按连接拓扑分析一次并缓存。
+    /// 时序元件的反馈路径不属于组合环路,建图时跳过。
+    static bool detectCombinationalLoop(const Schematic& schematic);
 };
 
 } // namespace editor
