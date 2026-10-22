@@ -40,6 +40,23 @@ Windows 上不用抓屏:`ui_verify` 加了一条 `pixel <x> <y>` 命令,用 `wxD
 > `.vscode/settings.json` 里的 `cmake.configureSettings`,那里没有 `BUILD_VERIFY_TOOLS`,
 > target 就会消失。把 `"BUILD_VERIFY_TOOLS": "ON"` 一并加进那份配置即可(该文件已 gitignore)。
 
+### Linux
+
+`verify_mvp.py` 在 Linux 上也能跑,但有三处和 Windows 不一样:
+
+- **程序名**没有 `.exe`(脚本会自动找 `build/ui_verify`,也可以显式传参)
+- **画布尺寸**可能不同 —— 脚本第 0 项会先检查 ≥540×400,不够会直接报出实际尺寸
+- **`wxDC::GetPixel` 在 wxGTK 上可能没实现** —— 这时脚本会打印 `n/a` 并**跳过视觉断言**,
+  状态栏那几项照跑。像素核对接力仍由 `verify_stage4.py` 的 `XGetImage` 负责
+
+```bash
+cmake -S . -B build-linux -DBUILD_VERIFY_TOOLS=ON
+cmake --build build-linux -j
+python3 tools/verify_mvp.py build-linux/ui_verify
+```
+
+第一次跑请留意 `== 0. 画布尺寸 ==` 那一行。
+
 ## 跑核对脚本
 
 ```bash
