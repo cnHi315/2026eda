@@ -26,6 +26,10 @@ public:
     void FillFromLibrary(const editor::ComponentLibrary& lib);
     void SetTypeCallback(TypeCallback cb);
 
+    /// 外部(撤销 / 打开 / 新建)把放置模式关掉时,同步取消树里的高亮,
+    /// 否则会出现"树里还选中着、点画布却没反应"的状态不同步。
+    void ClearSelection();
+
 private:
     void OnSelectionChanged(wxTreeEvent& evt);
 

@@ -115,6 +115,12 @@ void UiMainFrame::BuildLayout() {
     m_canvas->SetSelectionCallback(
         [this](const editor::Component* c) { m_props->ShowComponent(c); });
     m_canvas->SetChangedCallback([this]() { RefreshCounts(); });
+    // 撤销 / 打开 / 新建 会把放置模式清掉,这里同步把元件树的高亮也清掉
+    m_canvas->SetPlacementCallback([this](const std::string& type) {
+        if (type.empty()) {
+            m_palette->ClearSelection();
+        }
+    });
 
     // 左/右固定宽度,中栏占满剩余空间
     auto* sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -169,8 +175,10 @@ void UiMainFrame::OnNew(wxCommandEvent&) {
 }
 
 void UiMainFrame::OnOpen(wxCommandEvent&) {
+    // "所有文件"放在第一项:默认就能选任意文件,便于验证"打开非法文件 → 打开失败"的失败路径
+    //(之前默认过滤 JSON,坏文件在对话框里是灰的,根本选不到)。
     wxFileDialog dlg(this, U8("打开原理图"), "", "",
-                     U8("原理图 JSON (*.json)|*.json|所有文件 (*.*)|*.*"),
+                     U8("所有文件 (*.*)|*.*|原理图 JSON (*.json)|*.json"),
                      wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (dlg.ShowModal() != wxID_OK) {
         return;

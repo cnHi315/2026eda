@@ -61,12 +61,17 @@ void CanvasPanel::Attach(editor::SchematicModel* model, editor::Simulator* sim) 
 void CanvasPanel::SetStatusCallback(StatusCallback cb) { m_status = std::move(cb); }
 void CanvasPanel::SetSelectionCallback(SelectionCallback cb) { m_onSelection = std::move(cb); }
 void CanvasPanel::SetChangedCallback(ChangedCallback cb) { m_onChanged = std::move(cb); }
+void CanvasPanel::SetPlacementCallback(PlacementCallback cb) { m_onPlacement = std::move(cb); }
 
 void CanvasPanel::SetPlacementType(const std::string& type) {
+    const bool changed = (m_placeType != type);
     m_placeType = type;
     if (!type.empty()) {
         SetStatus(U8("放置模式:") + wxString::FromUTF8(type.c_str()) +
                   U8(" —— 点击画布空白处放置;Esc 退出"));
+    }
+    if (changed && m_onPlacement) {
+        m_onPlacement(m_placeType);
     }
     Refresh();
 }
@@ -75,6 +80,9 @@ void CanvasPanel::ClearPlacementType() {
     if (!m_placeType.empty()) {
         m_placeType.clear();
         SetStatus(U8("已退出放置模式"));
+        if (m_onPlacement) {
+            m_onPlacement(std::string{});        // 同步左侧元件树的高亮
+        }
         Refresh();
     }
 }
@@ -84,11 +92,26 @@ void CanvasPanel::OnDocumentReplaced() {
     m_sel = HitResult{};
     m_hover = HitResult{};
     m_switchLevel.clear();          // 开关默认关闭,且 v1 不持久化
-    m_placeType.clear();
+    if (!m_placeType.empty()) {     // 放置模式也要清,并同步元件树(否则树里还高亮着,
+        m_placeType.clear();        // 用户以为还在放置模式,点画布却没反应)
+        if (m_onPlacement) {
+            m_onPlacement(std::string{});
+        }
+    }
     ResyncSimulation();
     NotifySelection();
     NotifyChanged();
+
+    // 撤销 / 重做 / 新建 / 打开 都由菜单命令(或菜单命令后面跟着模态对话框)触发。
+    // 某些平台下此时 Refresh() 只是把窗口标脏,真正出帧要等下一条外部消息(鼠标移动、
+    // 焦点变化…)才发生 —— 表现就是"按了 Ctrl+Z 画面不动,直到动一下鼠标才变"。
+    // 这里 Update() 立即出一帧,再 CallAfter 补一次,确保与调用时序无关。
     Refresh();
+    Update();
+    CallAfter([this]() {
+        Refresh();
+        Update();
+    });
 }
 
 void CanvasPanel::ResyncSimulation() {
@@ -278,7 +301,16 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
         if (m_dragMoved) {
             const editor::Point target =
                 SnapToGrid(editor::Point{p.x - m_dragGrab.x, p.y - m_dragGrab.y});
-            MoveComponentTo(id, target, /*recordHistory=*/true);   // model.moveElement(入栈)
+            // 拖动过程中已经实时把元件挪到落点,不能再走 MoveComponentTo(…, true):
+            // 它会因为"位置和当前一致"直接 return,撤销栈就漏记了 —— 表现为"拖动无法撤销"。
+            // 这里直接提交:确保落点生效,再把按下时取的快照入栈。
+            if (target.x != m_dragOrig.x || target.y != m_dragOrig.y) {
+                if (m_model != nullptr) {
+                    m_model->moveElement(id, target);
+                }
+                PushUndoSnapshot(m_dragBefore);          // 按下时的快照
+                NotifyChanged();
+            }
             SetStatus(U8("放下 ") + wxString::FromUTF8(id.c_str()) + U8(" 位置:(") +
                       wxString::Format("%d,%d", target.x, target.y) + U8(")"));
         } else {
@@ -908,12 +940,12 @@ void CanvasPanel::DrawComponent(wxDC& dc, const editor::Component& c) const {
         DrawPinDot(dc, pe, pinSelected || pinHovered || pinSnapped);
 
         dc.SetTextForeground(wxColour(120, 120, 120));
-        dc.DrawText(U8(pin.name.c_str()), pe.x + 5, pe.y - 16);
+        dc.DrawText(U8(pin.name.c_str()), pe.x + kPinLabelDx, pe.y - kPinLabelDy);
     }
 
     const std::string& label = c.name.empty() ? c.id : c.name;
     dc.SetTextForeground(wxColour(30, 30, 30));
-    dc.DrawText(U8(label.c_str()), o.x - hw, o.y - hh - 18);
+    dc.DrawText(U8(label.c_str()), o.x - hw, o.y - hh - kCmpNameDy);
 }
 
 void CanvasPanel::DrawWire(wxDC& dc, const editor::Wire& w) const {
@@ -1041,6 +1073,13 @@ bool CanvasPanel::Undo() {
     if (m_model == nullptr || m_undo.empty()) {
         return false;
     }
+    if (m_mode != Mode::Idle) {
+        // 拖动 / 连线还没落定:模型里已经有"未入栈"的中间状态。此时若真去撤销,
+        // 撤掉的是上一条历史(比如刚放下的元件),看起来就像"撤销把放置和移动一起吃掉了"。
+        // 约定:Ctrl+Z 在交互进行中不生效,先松手。
+        SetStatus(U8("正在拖动或连线 —— 松开鼠标后再撤销"));
+        return true;                                     // 已处理(只是不执行),不额外报错
+    }
     m_redo.push_back(m_model->data());                   // 当前状态留给重做
     const editor::Schematic snapshot = m_undo.back();
     m_undo.pop_back();
@@ -1054,6 +1093,10 @@ bool CanvasPanel::Undo() {
 bool CanvasPanel::Redo() {
     if (m_model == nullptr || m_redo.empty()) {
         return false;
+    }
+    if (m_mode != Mode::Idle) {
+        SetStatus(U8("正在拖动或连线 —— 松开鼠标后再重做"));
+        return true;
     }
     m_undo.push_back(m_model->data());
     const editor::Schematic snapshot = m_redo.back();
@@ -1122,8 +1165,33 @@ void CanvasPanel::ClampOrigin() {
 wxRect CanvasPanel::ScreenRectOf(const editor::Component& c, int margin) const {
     const SymbolSize sz = SizeOf(c.type);
     const wxPoint o = ToScreen(c.pos);
-    return wxRect(o.x - sz.w / 2 - margin, o.y - sz.h / 2 - margin,
-                  sz.w + 2 * margin, sz.h + 2 * margin);
+    const int hw = sz.w / 2;
+    const int hh = sz.h / 2;
+
+    // 元件体 + 选中/悬停外框 + 命中余量
+    wxRect r(o.x - hw - margin, o.y - hh - margin,
+             sz.w + 2 * margin, sz.h + 2 * margin);
+
+    // 元件名:画在符号框左上角再往上 kCmpNameDy,宽度可能超过符号框
+    r.Union(wxRect(o.x - hw,
+                   o.y - hh - kCmpNameDy - kCmpNameH,
+                   (sz.w > kCmpNameW) ? sz.w : kCmpNameW,
+                   kCmpNameDy + kCmpNameH));
+
+    // 引脚:短线、端点圆点、以及画在端点右上方(框外)的引脚名。
+    // 这一支就是"拖拽残留 Y"的修复点:kCmpMargin 够不到引脚名的右边缘。
+    for (const auto& pin : c.pins) {
+        const wxPoint pe = ToScreen(editor::Point{c.pos.x + pin.relPos.x,
+                                                  c.pos.y + pin.relPos.y});
+        const int left = kPinHitR + 1;
+        const int right = (kPinLabelDx + kPinLabelW > kPinHitR + 1)
+                              ? kPinLabelDx + kPinLabelW
+                              : kPinHitR + 1;
+        const int up = kPinLabelDy + kPinLabelH;
+        const int down = kPinHitR + 1;
+        r.Union(wxRect(pe.x - left, pe.y - up, left + right, up + down));
+    }
+    return r;
 }
 
 wxRect CanvasPanel::ScreenRectOfWire(const editor::Wire& w, int margin) const {
