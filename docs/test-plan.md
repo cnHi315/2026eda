@@ -1,6 +1,6 @@
-# 测试用例(手工核对)
+﻿# 测试用例(手工核对)
 
-> 状态:□草稿 ☑评审中 □稳定 | 负责人:全组 | 最后更新:2026-10-15(每次修改后更新这行)
+> 状态:□草稿 ☑评审中 □稳定 | 负责人:全组 | 最后更新:2026-10-28(每次修改后更新这行)
 > 每完成一项,把"实际"和"状态"填上。演示前必须全绿。
 
 | 编号 | 步骤 | 预期 | 实际 | 状态 |
@@ -25,14 +25,12 @@
 
 | 编号 | 步骤 | 预期 | 实际 | 状态 |
 | --- | --- | --- | --- | --- |
-| C-T-01 | 调 `types()` | 返回 5 个:AND / OR / NOT / SWITCH / LED | | |
-| C-T-02 | 调 `displayName("AND")` 等五个 | 与门 / 或门 / 非门 / 开关 / LED | | |
-| C-T-03 | 调 `pinTemplate("AND")` | 3 引脚:A/B 输入(-50,-10)(-50,10),Y 输出(50,0) | | |
-| C-T-04 | 调 `pinTemplate("OR")` | 3 引脚,relPos 与 AND 对称 | | |
-| C-T-05 | 调 `pinTemplate("NOT")` | 2 引脚:A(-50,0) 输入,Y(50,0) 输出 | | |
-| C-T-06 | 调 `pinTemplate("SWITCH")` | 2 引脚:A(-50,0) 输入,Y(50,0) 输出 | 已作废:第 4 周定稿为单脚,见 C-T-09 | ❌ |
-| C-T-07 | 调 `pinTemplate("LED")` | 2 引脚:A(-50,0) 输入,K(50,0) 输出 | 已作废:第 4 周定稿为单脚,见 C-T-10 | ❌ |
-| C-T-08 | 调 `pinTemplate("UNKNOWN")` | 返回空 vector,程序不崩溃 | | |
-| C-T-09 | 调 `pinTemplate("SWITCH")` | 1 引脚:Y 输出(50,0),单脚源模型(第 4 周定稿) | | |
-| C-T-10 | 调 `pinTemplate("LED")` | 1 引脚:A 输入(-50,0),单脚汇模型(第 4 周定稿) | | |
-| C-T-11 | 调 `pinTemplate("UNKNOWN")` | 返回空 vector,画布拒绝放置 | | |
+| C-T-01 | 调 `types()` | 返回 5 个:AND / OR / NOT / SWITCH / LED | `components_test` 6/6 PASS:数量与顺序全部匹配 | ✅ |
+| C-T-02 | 调 `displayName("AND")` 等五个 | 与门 / 或门 / 非门 / 开关 / LED | `components_test` 6/6 PASS:含未知类型原样返回 | ✅ |
+| C-T-03 | 调 `pinTemplate("AND")` | 3 引脚:A/B 输入(-50,-10)(-50,10),Y 输出(50,0) | `components_test` 10/10 PASS:名称/方向/relPos 全匹配 | ✅ |
+| C-T-04 | 调 `pinTemplate("OR")` | 3 引脚,relPos 与 AND 对称 | `components_test` 5/5 PASS:与 AND 对称 | ✅ |
+| C-T-05 | 调 `pinTemplate("NOT")` | 2 引脚:A(-50,0) 输入,Y(50,0) 输出 | `components_test` 7/7 PASS:方向与坐标全匹配 | ✅ |
+| C-T-08 | 调 `pinTemplate("UNKNOWN")` | 返回空 vector,程序不崩溃 | `components_test` PASS:UNKNOWN / 空串 / 小写 "and" 均返回空 | ✅ |
+| C-T-09 | 调 `pinTemplate("SWITCH")` | 1 引脚:Y 输出(50,0),单脚源模型(第 4 周定稿) | `components_test` 4/4 PASS:单脚 Y 输出 | ✅ |
+| C-T-10 | 调 `pinTemplate("LED")` | 1 引脚:A 输入(-50,0),单脚汇模型(第 4 周定稿) | `components_test` 4/4 PASS:单脚 A 输入 | ✅ |
+| C-T-11 | 调 `pinTemplate("UNKNOWN")` | 返回空 vector,画布拒绝放置 | 同 C-T-08:`components_test` 已验证返回空;B 的画布按空返回拒绝放置(interfaces.md 已约定) | ✅ |
