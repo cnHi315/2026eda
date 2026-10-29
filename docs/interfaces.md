@@ -9,6 +9,7 @@
 | --- | --- |
 | `const Schematic& data() const` | 只读访问全部数据(UI 渲染用) |
 | `void loadFrom(const Schematic&)` | 用现成的原理图替换当前内容(打开文件用);nets 按 wires 重算一遍 |
+| `std::vector<std::string> instantiate(const Schematic&, Point)` | 展开一份子电路片段:重分配 id、按包围盒左上角对齐、恢复内部连线;返回新元件 id |
 | `std::string addElement(type, Point)` | 放新元件,返回 id;失败返回空串 |
 | `bool removeElement(id)` | 删除元件,连带删掉它引脚上的导线 |
 | `bool moveElement(id, Point)` | 移动元件(只改坐标,连接关系不变) |
@@ -58,7 +59,6 @@
 > 电平进不了网络,"拨开关"是死的)。连带改动:`src/components/component_library.cpp`(引脚模板)、
 > `tests/model_test.cpp`(引脚下标与"输出直连"用例)。**c已于第四周追认**。
 
-
 ### C 侧:五元件真符号几何参数(v1.1,负责人 C,2026-10-28)
 
 > 与 B 的包围盒 60×40(半宽 30 / 半高 20)、引脚可视长度 20、`relPos ±50` 自洽。
@@ -76,6 +76,7 @@
 > **兼容性**:以上全部落在 B 定的包围盒 60×40 内(即 x ∈ [-30,30], y ∈ [-20,20]);引脚可视段仍按 20 从包围盒边界延伸到 `relPos`。
 > **v1 兜底**:B 的画布当前一律画矩形 + 引脚名;真符号作为 v1.1 增量实现,不影响现有验收。
 > **未知类型**:`pinTemplate` 返回空 → 画布拒绝放置,状态栏提示"未知元件类型:XXX"(见第 4 周约定③)。
+
 ### B 侧:画布几何参数对齐表(第 4 周由 B 定稿,C/A 追认)
 
 > 这组参数原先悬在 UI 代码里、又卡着 C 的符号尺寸,第 4 周改由 B 一次定死并公开。

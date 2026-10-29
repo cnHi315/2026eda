@@ -1,5 +1,8 @@
 #include "model/schematic_model.h"
 
+#include <algorithm>
+#include <map>
+
 #include "components/component_library.h"
 
 // TODO(A): 逐方法实现,每完成一项对照 docs/test-plan.md 的 T-02/T-03 核对。
@@ -25,6 +28,46 @@ const Schematic& SchematicModel::data() const {
 void SchematicModel::loadFrom(const Schematic& schematic) {
     schematic_ = schematic;
     rebuildNets();   // 文件里的 nets 可能过时,一律以 wires 为准
+}
+
+std::vector<std::string> SchematicModel::instantiate(const Schematic& fragment, Point at) {
+    if (fragment.components.empty()) return {};
+
+    // 1. 先校验:片段里的类型必须都在库里。有一个不认识就整批不插,
+    //    否则会在图纸上留下半个子电路。
+    ComponentLibrary lib;
+    for (const Component& c : fragment.components) {
+        if (lib.pinTemplate(c.type).empty()) return {};
+    }
+
+    // 2. 片段包围盒左上角对齐到 at
+    int minX = fragment.components.front().pos.x;
+    int minY = fragment.components.front().pos.y;
+    for (const Component& c : fragment.components) {
+        minX = std::min(minX, c.pos.x);
+        minY = std::min(minY, c.pos.y);
+    }
+
+    // 3. 逐个放置,记下「旧 id → 新 id」
+    std::map<std::string, std::string> remap;
+    std::vector<std::string> created;
+    for (const Component& c : fragment.components) {
+        const std::string id = addElement(c.type,
+            {c.pos.x - minX + at.x, c.pos.y - minY + at.y});
+        if (id.empty()) return {};          // 前面已校验,理论上不会走到
+        remap[c.id] = id;
+        created.push_back(id);
+    }
+
+    // 4. 恢复内部连线:只有两端都在片段里的才恢复;连到片段外的丢弃
+    for (const Wire& w : fragment.wires) {
+        const auto f = remap.find(w.from.componentId);
+        const auto t = remap.find(w.to.componentId);
+        if (f == remap.end() || t == remap.end()) continue;
+        addWire({f->second, w.from.pinIndex}, {t->second, w.to.pinIndex});
+    }
+
+    return created;
 }
 
 std::string SchematicModel::addElement(const std::string& type, Point pos) {

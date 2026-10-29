@@ -177,6 +177,55 @@ void testParallelWire() {
     CHECK(m.data().nets[0].pins.size() == 4);
 }
 
+/// 子电路展开:新 id、位置按包围盒对齐、内部连线跟着复制
+void testInstantiate() {
+    std::cout << "\n== 8. instantiate:子电路展开 ==\n";
+
+    // 造一个「两开关 + 与门」的片段 —— 相当于用户框选后封存的那一块
+    SchematicModel src;
+    src.addElement("SWITCH", {100, 100});   // SW1
+    src.addElement("SWITCH", {100, 200});   // SW2
+    src.addElement("AND", {300, 150});      // U1
+    src.addWire({"SW1", 0}, {"U1", 0});
+    src.addWire({"SW2", 0}, {"U1", 1});
+    CHECK(src.data().nets.size() == 2);
+    const Schematic frag = src.data();      // 复制一份当片段
+
+    SchematicModel m;
+    CHECK(m.instantiate(Schematic{}, {0, 0}).empty());   // 空片段
+
+    m.addElement("LED", {0, 0});            // 先占一个,确认新 id 不撞
+    const std::vector<std::string> ids = m.instantiate(frag, {500, 300});
+    CHECK(ids.size() == 3);
+    CHECK(ids[0] == "SW1");
+    CHECK(ids[1] == "SW2");
+    CHECK(ids[2] == "U1");
+    CHECK(m.data().components.size() == 4);  // LED1 + 3
+
+    // 包围盒左上角 (100,100) 对齐到 (500,300)
+    CHECK(m.findComponent("SW1")->pos.x == 500);
+    CHECK(m.findComponent("SW1")->pos.y == 300);
+    CHECK(m.findComponent("SW2")->pos.y == 400);
+    CHECK(m.findComponent("U1")->pos.x == 700);
+    CHECK(m.findComponent("U1")->pos.y == 350);
+
+    // 内部连线跟着复制,网络由导线重新生成
+    CHECK(m.data().wires.size() == 2);
+    CHECK(m.data().nets.size() == 2);
+    CHECK(m.data().nets[0].pins.size() == 2);
+
+    // 片段里有库里不存在的类型 → 整批不插
+    Schematic bogus;
+    Component bad;
+    bad.id = "X1";
+    bad.type = "BOGUS";
+    bad.pos = {0, 0};
+    bogus.components.push_back(bad);
+    SchematicModel m2;
+    CHECK(m2.instantiate(bogus, {0, 0}).empty());
+    CHECK(m2.data().components.empty());
+}
+
 } // namespace
 
 int main() {
@@ -193,6 +242,7 @@ int main() {
     testRemoveElement();
     testMoveElement();
     testParallelWire();
+    testInstantiate();
 
     std::cout << "\n---- " << (g_checks - g_failures) << "/" << g_checks << " 通过 ----\n";
     return g_failures == 0 ? 0 : 1;
