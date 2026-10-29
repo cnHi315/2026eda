@@ -48,23 +48,34 @@ std::vector<std::string> SchematicModel::instantiate(const Schematic& fragment, 
         minY = std::min(minY, c.pos.y);
     }
 
-    // 3. 逐个放置,记下「旧 id → 新 id」
+    // 3. 逐个放置,记下「旧 id → 新 id」。
+    //    第 3、4 步任何一步失败都整批回滚 —— 不允许在图纸上留下半个子电路。
+    auto rollback = [this](const std::vector<std::string>& ids) {
+        for (auto it = ids.rbegin(); it != ids.rend(); ++it) {
+            removeElement(*it);          // 连带删掉已恢复的导线,并重算网络
+        }
+    };
+
     std::map<std::string, std::string> remap;
     std::vector<std::string> created;
     for (const Component& c : fragment.components) {
         const std::string id = addElement(c.type,
             {c.pos.x - minX + at.x, c.pos.y - minY + at.y});
-        if (id.empty()) return {};          // 前面已校验,理论上不会走到
+        if (id.empty()) { rollback(created); return {}; }
         remap[c.id] = id;
         created.push_back(id);
     }
 
-    // 4. 恢复内部连线:只有两端都在片段里的才恢复;连到片段外的丢弃
+    // 4. 恢复内部连线:只有两端都在片段里的才恢复;连到片段外的按设计丢弃
     for (const Wire& w : fragment.wires) {
         const auto f = remap.find(w.from.componentId);
         const auto t = remap.find(w.to.componentId);
         if (f == remap.end() || t == remap.end()) continue;
-        addWire({f->second, w.from.pinIndex}, {t->second, w.to.pinIndex});
+        if (addWire({f->second, w.from.pinIndex},
+                    {t->second, w.to.pinIndex}).empty()) {
+            rollback(created);           // 连线恢复失败:整批撤掉,不留半成品
+            return {};
+        }
     }
 
     return created;

@@ -218,8 +218,7 @@
 
 > 周末回填,没做完就写做到哪了。
 
-
-- **A**:① **子电路 · 模型侧** —— 新增 `SchematicModel::instantiate(fragment, at)`:把一份子电路片段展开到当前图纸,重新分配元件与导线 id、按片段包围盒左上角对齐到指定位置、只恢复两端都在片段内的导线;片段中含库里不存在的类型时整批不插入,避免在图纸上留下半个子电路。`model_test` 补 17 项(**57 → 74**),`interfaces.md` 补一行。② **演示环境固化** —— 生成 `samples/demo.json`(两开关 + 与门 + LED,三条线连好),写入后回读校验一致(4 元件 / 3 导线 / 3 网络);`CircuitEditor.exe` 启动实测通过。③ **全量验证** —— 干净构建 0 warning;五个测试目标全过(components 45 / model 74 / io 83 / integration 22 / sim 8)。④ 中期汇报材料 `report/` 按指示删除归档。
+- **A**:① **子电路 · 模型侧** —— 新增 `SchematicModel::instantiate(fragment, at)`:把一份子电路片段展开到当前图纸,重新分配元件与导线 id、按片段包围盒左上角对齐到指定位置、只恢复两端都在片段内的导线;任何一步失败(类型不被元件库识别、或某根内部连线恢复失败)都**整批回滚**,不在图纸上留下半个子电路。`model_test` 补 21 项(**57 → 78**),`interfaces.md` 补一行。② **演示环境固化** —— 生成 `samples/demo.json`(两开关 + 与门 + LED,三条线连好),写入后回读校验一致(4 元件 / 3 导线 / 3 网络);`CircuitEditor.exe` 启动实测通过。③ **全量验证** —— 干净构建 0 warning;五个测试目标全过(components 45 / model 78 / io 83 / integration 22 / sim 8)。④ 中期汇报材料 `report/` 按指示删除归档。
 - **B**:
 - **C**:
 - **D**:接口已完备 —— ① sim_test Debug **12/12**、Release 4/4、integration_test **22/22** 全绿,无回归;② `hasCombinationalLoop()` 已是 public 接口(B 侧直接调用回状态栏),simulator 层不再动。

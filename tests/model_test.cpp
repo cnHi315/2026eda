@@ -224,6 +224,17 @@ void testInstantiate() {
     SchematicModel m2;
     CHECK(m2.instantiate(bogus, {0, 0}).empty());
     CHECK(m2.data().components.empty());
+
+    // 连线恢复失败(引脚下标越界)→ 已放置的元件必须全部回滚,不留半成品
+    Schematic broken;
+    broken.components = frag.components;
+    broken.wires.push_back({"bad", {"SW1", 0}, {"U1", 99}});
+    SchematicModel m3;
+    m3.addElement("LED", {0, 0});
+    CHECK(m3.instantiate(broken, {500, 300}).empty());
+    CHECK(m3.data().components.size() == 1);   // 只剩原来的 LED1
+    CHECK(m3.data().wires.empty());
+    CHECK(m3.data().nets.empty());
 }
 
 } // namespace
