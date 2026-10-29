@@ -76,6 +76,12 @@ add_executable(integration_test tests/integration_test.cpp
     src/components/component_library.cpp
     src/simulation/simulator.cpp)
 
+    # ---------------------------------------------------------------------------
+# 控制台测试目标:ComponentLibrary 引脚模板自测(跨平台,不链接 wx)
+#   ./build/components_test    (Windows 上是 build\components_test.exe)
+# ---------------------------------------------------------------------------
+add_executable(components_test tests/components_test.cpp
+    src/components/component_library.cpp)
 # ---------------------------------------------------------------------------
 # 开发工具:GUI 端到端验证台(tools/ui_verify.cpp)。默认不构建。
 #   cmake -S . -B build -DBUILD_VERIFY_TOOLS=ON

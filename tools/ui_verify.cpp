@@ -78,15 +78,22 @@ private:
     }
 
     void OnTick(wxTimerEvent&) {
+        if (exiting) {
+            return;
+        }
         std::string line;
         if (!std::getline(std::cin, line)) {
+            // 只提示一次:先置位并停表,否则 frame->Close() 真正生效前的下一拍
+            // 又会走到这里 —— 双击运行时表现为"无限弹出提示框"。
+            exiting = true;
+            timer.Stop();
             // 一条命令都没读到就被关掉 stdin —— 多半是直接双击了这个 exe。
             // 它是给脚本喂命令用的,双击只会一闪而过,这里给个提示再退出。
             if (!sawAnyCommand) {
                 wxMessageBox(
                     wxString::FromUTF8("这是命令驱动的验证台,不是双击用的。\n\n"
                                        "跑 MVP 链路核对:\n"
-                                       "    python tools/verify_mvp.py build/ui_verify.exe\n\n"
+                                       "    python3 tools/verify_mvp.py build/ui_verify\n\n"
                                        "命令清单见 tools/README.md。"),
                     "ui_verify");
             }
@@ -226,6 +233,7 @@ private:
     CanvasPanel* canvas = nullptr;
     wxTimer timer;
     bool sawAnyCommand = false;   ///< 收到过命令没有(用来区分"脚本跑完"和"双击启动")
+    bool exiting = false;         ///< 已进入退出流程(防止 Close 生效前重复弹提示)
 };
 
 wxIMPLEMENT_APP(VerifyApp);

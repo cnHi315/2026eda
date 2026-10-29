@@ -28,7 +28,7 @@ g++ -std=c++17 -I src $(wx-config --cxxflags) tools/ui_verify.cpp \
 ```bash
 cmake -S . -B build -DBUILD_VERIFY_TOOLS=ON
 cmake --build build --target ui_verify
-python tools/verify_mvp.py build/ui_verify.exe     # MVP 链路 9 项
+python3 tools/verify_mvp.py build/ui_verify.exe    # MVP 链路 9 项(Windows 上若无 python3 就用 python)
 ```
 
 Windows 上不用抓屏:`ui_verify` 加了一条 `pixel <x> <y>` 命令,用 `wxDC::GetPixel`

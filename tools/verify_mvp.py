@@ -9,7 +9,7 @@
     cmake --build build --target ui_verify
 
 用法:
-    python tools/verify_mvp.py build/ui_verify.exe
+    python3 tools/verify_mvp.py build/ui_verify.exe
     (Windows 上是 build/ui_verify.exe,Linux 上是自己用 g++ 编出来的那个)
 
 覆盖不到的部分:

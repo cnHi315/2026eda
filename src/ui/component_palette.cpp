@@ -41,6 +41,17 @@ void ComponentPalette::SetTypeCallback(TypeCallback cb) {
     m_onType = std::move(cb);
 }
 
+void ComponentPalette::ClearSelection() {
+    if (m_tree == nullptr) {
+        return;
+    }
+    // Unselect() 会触发 wxEVT_TREE_SEL_CHANGED → m_onType("") → 画布再次清空放置模式,
+    // 但画布那边有 "值没变就不回调" 的短路,所以不会来回震荡。
+    if (m_tree->GetSelection().IsOk()) {
+        m_tree->Unselect();
+    }
+}
+
 void ComponentPalette::FillFromLibrary(const editor::ComponentLibrary& lib) {
     m_tree->DeleteAllItems();
     const wxTreeItemId root = m_tree->AddRoot(U8("元件库"));

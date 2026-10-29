@@ -36,6 +36,9 @@ public:
     using SelectionCallback = std::function<void(const editor::Component*)>;
     /// 文档发生结构变化(放置 / 删除 / 连线 / 拨开关):通知外层刷新计数与属性表。
     using ChangedCallback = std::function<void()>;
+    /// 放置模式变化(含被撤销/打开/新建强制清空时)。参数为空串表示已退出放置模式。
+    /// MainFrame 用它把左侧元件树的高亮同步掉,否则会出现"树里还选中着、点画布却没反应"。
+    using PlacementCallback = std::function<void(const std::string& type)>;
 
     explicit CanvasPanel(wxWindow* parent);
 
@@ -44,6 +47,7 @@ public:
     void SetStatusCallback(StatusCallback cb);
     void SetSelectionCallback(SelectionCallback cb);
     void SetChangedCallback(ChangedCallback cb);
+    void SetPlacementCallback(PlacementCallback cb);
 
     /// 放置模式:元件树选中类型后进入,画布左键点空白 → addElement;空串退出。
     void SetPlacementType(const std::string& type);
@@ -208,6 +212,7 @@ private:
     StatusCallback m_status;
     SelectionCallback m_onSelection;
     ChangedCallback m_onChanged;
+    PlacementCallback m_onPlacement;
 
     // —— 尺寸与命中容差(逻辑坐标;见 docs/interfaces.md 的几何参数表) ——
     static constexpr int kGridStep  = 20;
@@ -218,6 +223,16 @@ private:
     static constexpr int kPinHitR   = 8;
     static constexpr int kWireHitR  = 4;
     static constexpr int kPanKeep   = 40;   ///< 平移时至少留在视口内的内容像素
-    static constexpr int kCmpMargin = 26;   ///< 局部重绘:元件外扩(含标签/选中框)
+    static constexpr int kCmpMargin = 26;   ///< 局部重绘:元件外扩(含选中框/命中半径)
+
+    // 画在符号框之外的装饰(引脚短线、引脚名、元件名)——局部重绘区域必须把它们算进去,
+    // 否则拖拽时旧位置的标签擦不掉,会留下残影。DrawComponent 与 ScreenRectOf 共用这组常量。
+    static constexpr int kPinLabelDx = 5;    ///< 引脚名:相对引脚端点的 x 偏移
+    static constexpr int kPinLabelDy = 16;   ///< 引脚名:相对引脚端点的 y 偏移
+    static constexpr int kPinLabelW  = 26;   ///< 引脚名字宽余量
+    static constexpr int kPinLabelH  = 14;   ///< 引脚名字高余量
+    static constexpr int kCmpNameDy  = 18;   ///< 元件名:相对符号框顶边的 y 偏移
+    static constexpr int kCmpNameH   = 16;   ///< 元件名字高余量
+    static constexpr int kCmpNameW   = 96;   ///< 元件名字宽余量
     static constexpr size_t kUndoDepth = 50; ///< 撤销栈深度上限
 };

@@ -1,4 +1,4 @@
-# 开发日志
+﻿# 开发日志
 
 > 用法:每周每人写几行(完成 / 问题 / 下周计划)。
 
@@ -161,7 +161,7 @@
 
 - **A**:① **解锁 A-D 联调测试** —— D 那段原先锁在 `src/simulation/simulator.cpp` 的 `#if 0` 里(注释自己都写着该放 `tests/`),现落到 `tests/integration_test.cpp` 并挂 `integration_test` 目标,**22 项自测全过**。比原来多了两项:元件与连线全部走 `SchematicModel` 造数据(不是手写假 Schematic),以及"**删线之后必须重新 load**"这条契约的验证 —— 就是 interfaces.md 提醒的那个坑,现在有测试盯着了。② **顺手清掉 `simulator.cpp` 里两段测试代码** —— 除了那段锁着的,147-207 行还藏着一份与 `tests/main_test.cpp` 重复、且**无人调用**的 `testAndGateTruthTable`;文件从 266 行降到 141 行,连带去掉 3 个只为测试而存在的 include(`<cassert>` `<unordered_map>` `<algorithm>`)。③ **焊死验收表**:T-04 / T-05 的**数据层**转 ✅(`io_test` 61 项覆盖);另立 **T-12** 记"菜单 → 文件对话框"那条 UI 路径 —— 原生模态对话框机器化脚本够不着,写清"待人工点一次",按要求归 B;删掉 C-T-06 / C-T-07 两条与单脚模型打架的旧行;顺手清了 test-plan 的历史遗留行尾空格 / Tab、末尾换行与标题层级。④ `docs/user-manual.md` 一并归 B。验证:全量构建 0 warning,四个测试目标(sim / model 57 / io 61 / integration 22)全过。
 - **B**:**撤销 / 重做(F-06)完成 + 手册与验收表收尾** —— ① **快照式撤销/重做**:每次真编辑前把整份 `Schematic` 压入撤销栈(上限 50,超出丢最旧),撤销 = `model.loadFrom(快照)` + `OnDocumentReplaced()`(清选中 / 清开关挡位 / 重建仿真 / 重绘),重做对称;任何新编辑清空重做栈。入栈点只有四处:放置元件、拖动(按下取快照、抬起且确实移动过才入栈)、连线、删除元件或导线;单击选中、Esc 还原、拨开关(只改仿真状态)一律不入栈 —— 后两条由测试盯着;新建 / 打开会清空历史。UI 侧:菜单「编辑 → 撤销 / 重做」+ `Ctrl+Z` / `Ctrl+Y` + 工具栏两个按钮,按可用性置灰(`wxEVT_UPDATE_UI`)。**v1 快照只含原理图、不含仿真状态**,所以撤销后开关回到关闭,状态栏写明这一点(第 5 周定稿决策 1)。② `docs/user-manual.md` 按当前版本重写(演示流程 / 操作说明 / 快捷键 / 已知限制);③ 验收表:新增 **T-13**(撤销 / 重做),T-04 / T-05 的数据层由 `io_test` 覆盖、UI 那段留在 T-12 待人工点一次。验证:`tools/verify_undo.py` 机器化 **16/16**;阶段四端到端 15/15 与 issue 1/4 无回归(性能项受机器负载影响,空载复测 1000 元件 ≈39ms/帧,此前空载 ≈33ms)。
-- **C**:
+- **C**:① **C 侧核对项自动化** —— 新增 `tests/components_test.cpp` + `components_test` 目标(照 `model_test` / `io_test` 写法,只链 `src/components/component_library.cpp`,不依赖 model、不依赖 wx)。覆盖 `types()` / `displayName()` / `pinTemplate()` 五元件 + 未知类型,共 **45 项 CHECK 全 PASS**(C-T-01~05、C-T-08~11)。把 test-plan 里 C-T-01~05、C-T-08~11 的"实际/状态"列全部填上 ✅;删掉 C-T-06 / C-T-07 两条与单脚模型打架的作废行。② **五元件真符号几何参数 v1.1** —— 补进 `docs/interfaces.md`,给出 AND 半圆弧 / OR 双贝塞尔弧 / NOT 三角+圆圈 / SWITCH 拨杆 / LED 三角+发光箭头的完整几何坐标,全部落在 B 的包围盒 60×40 内、与 `relPos ±50` 自洽。③ C3(自定义元件 JSON 进库)未做 —— 剩余时间优先保验收表全绿,留待第 7 周 buffer 视情况补。
 - **D**:`环路 / 振荡检测(D3)` + 配合 A 解锁联调测试 —— ① **结构化组合环检测**:元件当节点、对每条 net 的「输出脚 → 输入脚」建有向边,三色 DFS 找环(与电平无关);`load()` 缓存到 `m_hasLoop`,解决"`step()` 只迭代两步、遇组合环结果未定义"。② **接口** `Simulator::hasCombinationalLoop()`,供 B 在状态栏报"检测到环路"(D 只给 API,不碰 UI)。③ **解锁联调测试(本周 CMakeLists 改动)**:`CMakeLists.txt` 末尾**新增 `integration_test` 目标**,与 model + components + simulation 一起链接 —— `add_executable(integration_test tests/integration_test.cpp src/model/schematic_model.cpp src/components/component_library.cpp src/simulation/simulator.cpp)`;**其余目标(sim / model / io)未动**。④ 顺带删掉合并残留的死测试 `testAndGateTruthTable`(用了 `assert` 而 `<cassert>` 已被 A 删掉,构建不过)。验证:全量 5 目标 0 error,`sim_test` PASS,`integration_test` 22/22。
 
 ### 第 5 周问题
@@ -187,9 +187,10 @@
 > 周末回填,没做完就写做到哪了。
 
 - **A**:① **MVP 链路端到端自动化** —— 把 B 的验证台在 Windows 上跑起来了:它本来就是纯 wx 事件注入、没有平台专有代码,所以 **harness 一行没改就能用**;只补了一条 `pixel <x> <y>` 命令(用 `wxDC::GetPixel` 直接读画布颜色),替代 Linux 那边的 `XGetImage`。新增 `tools/verify_mvp.py`,一条命令跑完整条链路并断言:**9/9 通过,整轮 3.6s** —— 放 4 个元件(`4/0/0`)→ 连 3 根线(`4/3/3`)→ 双击两个开关 → 导线变亮绿 `(0,180,0)`、LED 点亮橙色 `(255,170,0)`。CMake 加了 `BUILD_VERIFY_TOOLS` 选项(默认 OFF,不影响别人的构建)。② 排查了一次启动失败:在工具环境里起进程时 PATH 被改写、不含 `C:\mingw64\bin`,exe 找不到 MinGW 的运行时 DLL(`libgcc_s_seh-1.dll` / `libstdc++-6.dll`)就**静默退出,零报错**。本机系统 PATH 里有这个目录,正常双击 / 从 VS Code 启动不受影响,**不需要额外放 DLL**。记这条只是提醒:换一台没装 MinGW 的机器跑演示,会撞同样的静默失败。③ 踩到两个 Windows 坑并写进 `tools/README.md`:wx 的 GUI 程序在 `CreateProcess` 管道下拿不到 stdout(改走临时文件);`subprocess` 用带 `/` 的相对路径会找不到文件(改 `abspath`)。未做:保存 / 打开 / 导出网表要弹原生文件对话框,自动化驱动不了 —— 仍然挂在 T-12(归 B)。④ 修掉 `io_test` 的一个脆弱点:临时文件原本用相对路径 `build/…`,换个工作目录跑就整片 FAIL(在 `/tmp` 和 `build/` 下都复现了);改用系统临时目录,从任意目录跑都是 61/61。⑤ 补了「**打开之后继续编辑**」的用例(22 项):打开文件后新生成的元件 / 导线 / 网络 id 不会和文件里已有的撞,再存再开 id 也仍然不变 —— 这条是演示里"打开 demo.json 改一下再存"的路径,之前完全没覆盖。`io_test` 现在 83/83。
-- **B**:
-- **C**:
+- **B**:① **Linux 端验证** —— `tools/verify_mvp.py` 在 Linux(wxGTK 3.2.9)实测 **9/9**:画布 616×579,`wxDC::GetPixel` 在该平台可用,视觉断言未跳过(灭灯 / 导线变绿 / LED 点亮三项像素断言全过),状态栏六项全过,整轮 **3.2s** —— 确认这套脚本确实跨平台。② **演示脚本** —— 新增 `docs/demo-script.md`:10 步照着念的流程(时间预算合计 3 分 15 秒)、兜底速查表(8 条常见现场故障与处置)、7 条预备问答、T-12 六项人工核对清单;并给出超时时的取舍建议(砍第 6、7 步)。③ **交互层七处集中修复** —— 见下方 Debug 条目。④ 同步 `IMPLEMENTATION_ROADMAP.md` 的第 6 周小节。未做:T-12 人工核对,留到演示前补。
+- **C**:见第 5 周完成 —— C 侧 9 项核对已全部转 ✅(`components_test` 45/45),真符号几何参数已进 `docs/interfaces.md`;C3 未做。
 - **D**:① `hasCombinationalLoop()` 补自测 —— 手写 Schematic 数据绕开 addWire 校验,覆盖 4 个场景(正常电路 false、单 NOT 自环 true、双 NOT 交叉耦合 true、经 DFF 反馈不构组合环 false);Debug 构建 sim_test 自动跑 **8/8** 通过,Release 由 `#ifndef NDEBUG` 保护跳过。② 时序元件(DFF)支持 —— `step()` 重构三阶段(两轮组合传播让 D 先稳定 → DFF 捕获 D 更新 Q → 最后一轮扩散 Q 变化);`detectCombinationalLoop` 建图时跳过连到时序 Input 的边,时序反馈不被误判为组合环;`isSequentialType()` 精确匹配 DFF/JK/SR/CLOCK/LATCH。③ 旋转确认:simulator 只读引脚索引与网络连接,不碰 `rotation`/`relPos`,纯 UI 层关注点,零改动。顺带删掉 `setPinLevel`/`evalComponent` 死声明。验证:sim_test Debug **12/12**(自测 8 + 原有 4)、Release 4/4、integration 22/22 无回归。
+- **Debug(2026-10-22 · 交互层集中修复)**:用户实测报出的一批问题,已修并推 `shuai`。① **拖拽残影**:元件局部重绘矩形只按 `kCmpMargin=26` 外扩,漏掉画在符号框外的**引脚名**(画在引脚端点右侧 5px 起、字宽再 +8,而矩形右边界只到 `+56`)。往左拖时旧位置的标签擦不掉、残片逐帧累积,往右拖被新矩形覆盖所以"消失" —— 现象正是"往左出现无数个 Y,往右消失,LED 没有"(LED 无 Y 引脚)。改为重绘区域与绘制**共用同一组常量**推导(新增 `kPinLabelDx/Dy/W/H`、`kCmpNameDy/H/W`,`ScreenRectOf` 逐引脚 union),杜绝以后再漂移。② **撤销后不出帧**:撤销/重做/新建/打开都由菜单命令(打开还带模态对话框)触发,`Refresh()` 只把窗口标脏,真正出帧被推迟到下一条外部消息(动鼠标 / 焦点变化)——表现为"按了 Ctrl+Z 画面不动"。`OnDocumentReplaced()` 改为 `Refresh() + Update()` 立即出一帧,再 `CallAfter` 补一次。③ **拖动不可撤销**:拖动过程已实时 `moveElement`,松手再走 `MoveComponentTo(…,true)` 会因"位置和当前一致"提前 `return`,按下时取的 `m_dragBefore` 因此成了**死代码**;改为松手直接提交落点 + `PushUndoSnapshot(m_dragBefore)`。④ **拖动中按 Ctrl+Z 会撤掉上一条历史**:拖动尚未入栈,撤销弹出的是上一次放置,`loadFrom` 顺带把实时位置一起回滚。`Undo()/Redo()` 增加交互守卫,拖动/连线未落定时只提示、不执行。⑤ **撤销后元件树仍高亮、点画布不放置**:`OnDocumentReplaced()` 直接 `m_placeType.clear()` 没通知元件树;新增 `PlacementCallback`,MainFrame 接到 `palette->ClearSelection()`。⑥ **打开对话框选不到非 JSON**:`所有文件` 过滤器原本排第二,坏文件在对话框里是灰的,"打开非法文件 → 打开失败"这条验收路径没法验证;提到第一项。⑦ **验证台双击无限弹窗**:stdin EOF 后先弹框再 `Close()`,而 `Close()` 要等下一轮才生效、120ms 定时器继续触发;改为先置 `exiting` 并 `timer.Stop()`,只提示一次。另把脚本调用示例统一成 `python3`。验证:`verify_mvp` **9/9**、`verify_undo` **16/16**,主程序与验证台 0 error;用户端实测全部通过。
 
 ### 第 6 周问题
 
@@ -199,14 +200,32 @@
 
 ## 第 7 周(2026-10-29 起)
 
-> 进入"只修不加"阶段,目标是把验收表全绿后整条链路演练一遍。
+> 展示时间顺延(约三周后),因此本周新增一个功能:**自定义子电路**;第 8 周仍按原计划冻结。
+> 其余精力放在收尾 —— 让演示当天不出岔子。
 
 ### 第 7 周计划
 
-- **D**:① 确认 sim_test 与 integration_test 全绿;② 环路的状态栏提示以本周为限。
+- **A**:**子电路 · 模型侧** —— 新增 `SchematicModel::instantiate(const Schematic& fragment, Point at)`:把一份片段展开到当前图纸,重新分配元件与导线 id,按片段包围盒左上角对齐到 `at`,并恢复内部连线;配 `model_test` 用例(展开后 id 不冲突、内部连线正确、网络重新推导);在 `interfaces.md` 补一行。**子电路文件就是一份普通 Schematic JSON**,复用 `NetlistIO::save/load`,不新增文件格式。另:① 演示环境固化 —— 预置 `demo.json`,确认 `CircuitEditor.exe` 在演示机上双击可启动(依赖 MinGW 运行时,换机器可能静默失败);② 干净构建 + 五个测试目标全部通过;③ 整理 `report/` 后归档。
+- **B**:**子电路 · 界面侧** —— ① 画布**框选多选**(空白处拖出选框)+ Ctrl 点击加选;② 「**封存为子电路**」:把选中元件与**两端都在选区内**的导线写成 `subcircuits/<名字>.json`(调 `NetlistIO::save`,坐标规整到包围盒左上角);③ 元件树新增一级「**自定义子电路**」,启动时扫描该目录;④ 点击后画布放置,调 `model.instantiate`,入一次撤销快照,粘贴后选中新块。另:⑤ T-12 人工核对六项;⑥ 按演示脚本彩排两遍并掐表。
+- **C**:① 确认 `components_test` 保持 45/45;② 真符号若要做,需在彩排之前合入 —— 否则维持 v1 的矩形符号。
+- **D**:① 确认 `sim_test` 与 `integration_test` 全绿;② 环路的状态栏提示以本周为限。
+
+> 本周关键路径:**子电路的模型侧 `instantiate`** —— 界面侧的多选、面板与放置都要等它先能用。
+> 第二关键:**T-12 与彩排** —— 验收表最后一格,加上现场时间控制。
+> **对外引脚的规则**:选中元件上**没有连到选区内其它元件**的引脚,即为子电路的对外引脚。这条规则在放置时按片段内部连线推导,不需要在文件里额外记录 —— 所以子电路文件与普通原理图 JSON 完全同构。
 
 ### 第 7 周完成
 
 > 周末回填,没做完就写做到哪了。
 
+
+- **A**:① **子电路 · 模型侧** —— 新增 `SchematicModel::instantiate(fragment, at)`:把一份子电路片段展开到当前图纸,重新分配元件与导线 id、按片段包围盒左上角对齐到指定位置、只恢复两端都在片段内的导线;片段中含库里不存在的类型时整批不插入,避免在图纸上留下半个子电路。`model_test` 补 17 项(**57 → 74**),`interfaces.md` 补一行。② **演示环境固化** —— 生成 `samples/demo.json`(两开关 + 与门 + LED,三条线连好),写入后回读校验一致(4 元件 / 3 导线 / 3 网络);`CircuitEditor.exe` 启动实测通过。③ **全量验证** —— 干净构建 0 warning;五个测试目标全过(components 45 / model 74 / io 83 / integration 22 / sim 8)。④ 中期汇报材料 `report/` 按指示删除归档。
+- **B**:
+- **C**:
 - **D**:接口已完备 —— ① sim_test Debug **12/12**、Release 4/4、integration_test **22/22** 全绿,无回归;② `hasCombinationalLoop()` 已是 public 接口(B 侧直接调用回状态栏),simulator 层不再动。
+
+### 第 7 周问题
+
+> 卡住的写这里:哪个文件、什么现象、想找谁。
+
+-

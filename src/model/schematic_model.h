@@ -16,6 +16,11 @@ public:
     /// nets 会按 wires 重算一遍 —— 文件里存的 nets 不作数。
     void loadFrom(const Schematic& schematic);
 
+    /// 把一份子电路片段展开到当前图纸(自定义子电路的「放置」),返回新元件 id(按片段顺序)。
+    /// 新元件重新分配 id;片段内坐标以包围盒左上角为原点,对齐到 at。
+    /// 只恢复两端都在片段内的导线;片段里有库里不存在的类型时整批不插入,返回空。
+    std::vector<std::string> instantiate(const Schematic& fragment, Point at);
+
     /// 放置一个指定类型的新元件,返回新元件 id;失败返回空串。
     /// type 从 ComponentLibrary::types() 里取。
     std::string addElement(const std::string& type, Point pos);

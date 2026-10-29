@@ -1,0 +1,180 @@
+{
+  "components": [
+    {
+      "id": "SW1",
+      "name": "SW1",
+      "pins": [
+        {
+          "direction": "output",
+          "name": "Y",
+          "relPos": {
+            "x": 50,
+            "y": 0
+          }
+        }
+      ],
+      "pos": {
+        "x": 100,
+        "y": 140
+      },
+      "rotation": 0,
+      "type": "SWITCH"
+    },
+    {
+      "id": "SW2",
+      "name": "SW2",
+      "pins": [
+        {
+          "direction": "output",
+          "name": "Y",
+          "relPos": {
+            "x": 50,
+            "y": 0
+          }
+        }
+      ],
+      "pos": {
+        "x": 100,
+        "y": 360
+      },
+      "rotation": 0,
+      "type": "SWITCH"
+    },
+    {
+      "id": "U1",
+      "name": "U1",
+      "pins": [
+        {
+          "direction": "input",
+          "name": "A",
+          "relPos": {
+            "x": -50,
+            "y": -10
+          }
+        },
+        {
+          "direction": "input",
+          "name": "B",
+          "relPos": {
+            "x": -50,
+            "y": 10
+          }
+        },
+        {
+          "direction": "output",
+          "name": "Y",
+          "relPos": {
+            "x": 50,
+            "y": 0
+          }
+        }
+      ],
+      "pos": {
+        "x": 300,
+        "y": 240
+      },
+      "rotation": 0,
+      "type": "AND"
+    },
+    {
+      "id": "LED1",
+      "name": "LED1",
+      "pins": [
+        {
+          "direction": "input",
+          "name": "A",
+          "relPos": {
+            "x": -50,
+            "y": 0
+          }
+        }
+      ],
+      "pos": {
+        "x": 500,
+        "y": 240
+      },
+      "rotation": 0,
+      "type": "LED"
+    }
+  ],
+  "nets": [
+    {
+      "id": "net1",
+      "name": "",
+      "pins": [
+        {
+          "componentId": "SW1",
+          "pinIndex": 0
+        },
+        {
+          "componentId": "U1",
+          "pinIndex": 0
+        }
+      ]
+    },
+    {
+      "id": "net2",
+      "name": "",
+      "pins": [
+        {
+          "componentId": "SW2",
+          "pinIndex": 0
+        },
+        {
+          "componentId": "U1",
+          "pinIndex": 1
+        }
+      ]
+    },
+    {
+      "id": "net3",
+      "name": "",
+      "pins": [
+        {
+          "componentId": "U1",
+          "pinIndex": 2
+        },
+        {
+          "componentId": "LED1",
+          "pinIndex": 0
+        }
+      ]
+    }
+  ],
+  "version": 1,
+  "wires": [
+    {
+      "from": {
+        "componentId": "SW1",
+        "pinIndex": 0
+      },
+      "id": "wire1",
+      "to": {
+        "componentId": "U1",
+        "pinIndex": 0
+      }
+    },
+    {
+      "from": {
+        "componentId": "SW2",
+        "pinIndex": 0
+      },
+      "id": "wire2",
+      "to": {
+        "componentId": "U1",
+        "pinIndex": 1
+      }
+    },
+    {
+      "from": {
+        "componentId": "U1",
+        "pinIndex": 2
+      },
+      "id": "wire3",
+      "to": {
+        "componentId": "LED1",
+        "pinIndex": 0
+      }
+    }
+  ]
+}
