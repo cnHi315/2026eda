@@ -11,6 +11,7 @@
 #include "io/netlist_io.h"
 #include "model/schematic_model.h"
 #include "simulation/simulator.h"
+#include "ui/subcircuit_library.h"
 
 class ComponentPalette;
 class CanvasPanel;
@@ -18,7 +19,7 @@ class PropertyPanel;
 
 class UiMainFrame : public wxFrame {
 public:
-    UiMainFrame();
+    explicit UiMainFrame(const wxString& subcircuitDirectory = wxEmptyString);
 
 private:
     void BuildMenuBar();
@@ -37,6 +38,9 @@ private:
     void OnRedo(wxCommandEvent& evt);
     void OnUpdateUndo(wxUpdateUIEvent& evt);
     void OnUpdateRedo(wxUpdateUIEvent& evt);
+    void OnSaveSubcircuit(wxCommandEvent& evt);
+    void OnReloadSubcircuits(wxCommandEvent& evt);
+    void ReloadSubcircuits();
 
     bool SaveDocument(const wxString& path);
     std::string Utf8Path(const wxString& path) const;
@@ -52,4 +56,5 @@ private:
     editor::NetlistIO m_io;
     editor::Simulator m_sim;
     wxString m_path;   ///< 当前文件路径;空 = 未命名文档
+    SubcircuitLibrary m_subcircuits;
 };

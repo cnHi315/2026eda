@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <string>
+#include "ui/subcircuit_library.h"
 
 namespace editor {
 class ComponentLibrary;
@@ -25,6 +26,9 @@ public:
     /// 用元件库填充(阶段四;MainFrame 在构造后调用一次)。
     void FillFromLibrary(const editor::ComponentLibrary& lib);
     void SetTypeCallback(TypeCallback cb);
+    using SubcircuitCallback = std::function<void(const editor::Schematic&, const std::string&)>;
+    void SetSubcircuitCallback(SubcircuitCallback cb);
+    void FillSubcircuits(const std::vector<SubcircuitLibrary::Item>& items);
 
     /// 外部(撤销 / 打开 / 新建)把放置模式关掉时,同步取消树里的高亮,
     /// 否则会出现"树里还选中着、点画布却没反应"的状态不同步。
@@ -35,4 +39,5 @@ private:
 
     wxTreeCtrl* m_tree = nullptr;
     TypeCallback m_onType;
+    SubcircuitCallback m_onSubcircuit;
 };

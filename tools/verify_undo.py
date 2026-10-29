@@ -32,7 +32,7 @@ def build_harness():
     libs = subprocess.run(["wx-config", "--libs", "core,base,propgrid"],
                           capture_output=True, text=True).stdout.split()
     sources = [os.path.join(REPO, "src/ui", f"{n}.cpp") for n in
-               ("canvas_panel", "component_palette", "main_frame", "property_panel")]
+               ("canvas_panel", "component_palette", "main_frame", "property_panel", "subcircuit_library")]
     sources += [os.path.join(REPO, "src/model/schematic_model.cpp"),
                 os.path.join(REPO, "src/components/component_library.cpp"),
                 os.path.join(REPO, "src/io/netlist_io.cpp"),

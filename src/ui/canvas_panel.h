@@ -20,6 +20,7 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
+#include <set>
 
 #include "contract/data_model.h"
 
@@ -53,13 +54,17 @@ public:
     void SetPlacementType(const std::string& type);
     void ClearPlacementType();
     const std::string& PlacementType() const { return m_placeType; }
+    bool SetSubcircuitPlacement(const editor::Schematic& fragment, const std::string& name);
+    bool HasSubcircuitPlacement() const { return m_placeFragment; }
+    const std::set<std::string>& SelectedIds() const { return m_selectedIds; }
+    bool ExportSelection(editor::Schematic* fragment, wxString* error) const;
 
     /// 删除当前选中的元件 / 导线(Delete 键与"编辑 → 删除"共用)。
     bool DeleteSelection();
 
     // —— 撤销 / 重做(F-06,快照式)——
-    //  快照只存原理图数据(Schematic);选中态与开关挡位属于 UI 状态,不入栈,
-    //  撤销后由 OnDocumentReplaced() 统一清空(状态栏会说明这一点)。
+    //  设计编辑入栈；拨开关不单独入栈。快照保留被删除开关的挡位，
+    //  撤销/重做时仍存在的开关继续使用其当前挡位。
     bool CanUndo() const { return !m_undo.empty(); }
     bool CanRedo() const { return !m_redo.empty(); }
     bool Undo();
@@ -67,7 +72,7 @@ public:
     void ClearHistory();
 
     /// 文档被替换(新建 / 打开)之后调用:清选中、清开关状态、重建仿真。
-    void OnDocumentReplaced();
+    void OnDocumentReplaced(bool clearSwitchLevels = true);
 
     /// 结构变化后重建仿真模型并重放开关状态。
     void ResyncSimulation();
@@ -91,7 +96,7 @@ private:
     };
 
     // —— 交互状态机 ——
-    enum class Mode { Idle, DraggingComponent, DrawingWire };
+    enum class Mode { Idle, DraggingComponent, DrawingWire, SelectingBox };
 
     // —— 事件 ——
     void OnPaint(wxPaintEvent& evt);
@@ -114,6 +119,12 @@ private:
     void DrawWire(wxDC& dc, const editor::Wire& w) const;
     void DrawPinDot(wxDC& dc, const wxPoint& p, bool highlight) const;
     void DrawRubberBand(wxDC& dc) const;
+    void DrawSelectionBox(wxDC& dc) const;
+    wxRect SelectionBox() const;
+    void UpdateSelectionFocus();
+    void MoveDraggedTo(const editor::Point& position);
+    wxRect DragArea() const;
+    wxSize TextSize8(const std::string& text) const;
 
     // —— 视图平移(issue 1) ——
     void PanBy(const wxPoint& deltaDevice);
@@ -151,8 +162,7 @@ private:
 
     // —— 写操作(全部走 model) ——
     bool PlaceAt(const editor::Point& logical);
-    void MoveComponentTo(const std::string& id, const editor::Point& pos,
-                         bool recordHistory);
+    bool PlaceFragmentAt(const editor::Point& logical);
     bool CanConnect(const editor::PinRef& from, const editor::PinRef& to,
                     wxString* reason) const;
     void AddWire(const editor::PinRef& from, const editor::PinRef& to);
@@ -170,6 +180,12 @@ private:
     void NotifySelection();
     void NotifyChanged();
     void PushUndoSnapshot(const editor::Schematic& before);
+    struct HistorySnapshot {
+        editor::Schematic schematic;
+        std::unordered_map<std::string, editor::SignalLevel> switches;
+    };
+    HistorySnapshot CaptureHistory(const editor::Schematic& schematic) const;
+    void RestoreHistory(const HistorySnapshot& snapshot);
 
     editor::SchematicModel* m_model = nullptr;   ///< 不持有,由 MainFrame 管理
     editor::Simulator* m_sim = nullptr;          ///< 不持有
@@ -187,12 +203,20 @@ private:
     /// id → 元件 的索引缓存(增量重建;避免每帧 O(n) 线性查找)
     mutable std::unordered_map<std::string, const editor::Component*> m_index;
     mutable bool m_indexDirty = true;
+    mutable std::unordered_map<std::string, wxSize> m_textSizes;
 
     // —— 交互状态 ——
     Mode m_mode = Mode::Idle;
     HitResult m_sel;
     HitResult m_hover;
     std::string m_placeType;             ///< 非空 = 放置模式(元件树选中)
+    bool m_placeFragment = false;
+    editor::Schematic m_fragment;
+    std::string m_fragmentName;
+    std::set<std::string> m_selectedIds;
+    std::set<std::string> m_boxBefore;
+    editor::Point m_boxStart, m_boxEnd;
+    std::unordered_map<std::string, editor::Point> m_dragPositions;
     std::string m_dragId;
     editor::Point m_dragGrab{0, 0};
     editor::Point m_dragOrig{0, 0};
@@ -206,8 +230,8 @@ private:
     std::unordered_map<std::string, editor::SignalLevel> m_switchLevel;
 
     /// 撤销 / 重做快照栈(上限 kUndoDepth,超出丢最旧)
-    std::deque<editor::Schematic> m_undo;
-    std::deque<editor::Schematic> m_redo;
+    std::deque<HistorySnapshot> m_undo;
+    std::deque<HistorySnapshot> m_redo;
 
     StatusCallback m_status;
     SelectionCallback m_onSelection;

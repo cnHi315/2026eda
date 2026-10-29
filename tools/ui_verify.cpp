@@ -16,7 +16,7 @@
 //   dclick <x> <y>          双击(拨开关)
 //   mdown / mup <x> <y>     中键(平移视图;中间的移动用 move 命令)
 //   wheel <x> <y> <rot> [h] 滚轮(rot=±120 为一格;h=1 表示横向轴)
-//   perf <n> <motions>      放 n 个元件后拖一个元件跑 motions 次移动,打印耗时
+//   perf <n> <motions>      新建独立图纸，放 n 个元件后拖动；报告实际数量及耗时
 //   undo | redo             触发菜单里的撤销 / 重做
 //   new                     触发菜单里的新建(清空文档与撤销历史)
 //   esc | del
@@ -162,10 +162,18 @@ private:
             int n = 0;
             int motions = 0;
             is >> n >> motions;
+            if (n <= 0 || motions <= 0) {
+                std::printf("PERF_ERROR: n and motions must be positive\nOK %s\n", line.c_str());
+                std::fflush(stdout);
+                return;
+            }
+            wxCommandEvent reset(wxEVT_MENU, wxID_NEW);
+            reset.SetEventObject(frame);
+            frame->ProcessWindowEvent(reset);
             canvas->SetPlacementType("AND");
             for (int i = 0; i < n; ++i) {
-                const int gx = 60 + (i % 12) * 90;
-                const int gy = 60 + (i / 12) * 70;
+                const int gx = 60 + (i % 12) * 100;
+                const int gy = 60 + (i / 12) * 80;
                 SendMouse(wxEVT_LEFT_DOWN, gx, gy);
                 SendMouse(wxEVT_LEFT_UP, gx, gy);
             }
@@ -178,8 +186,10 @@ private:
             }
             SendMouse(wxEVT_LEFT_UP, 60 + motions, 60);
             const long ms = watch.Time();
-            std::printf("PERF: n=%d motions=%d total=%ldms avg=%.2fms\n",
-                        n, motions, ms, motions > 0 ? double(ms) / motions : 0.0);
+            long actual = -1;
+            frame->GetStatusBar()->GetStatusText(1).AfterFirst(' ').BeforeFirst(' ').ToLong(&actual);
+            std::printf("PERF: n=%d actual=%ld motions=%d total=%ldms avg=%.2fms\n",
+                        n, actual, motions, ms, double(ms) / motions);
         } else if (cmd == "pixel") {
             int x = 0;
             int y = 0;

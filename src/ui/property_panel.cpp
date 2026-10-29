@@ -63,3 +63,10 @@ void PropertyPanel::ShowComponent(const editor::Component* c) {
            dir + wxString::Format("  rel(%d, %d)", p.relPos.x, p.relPos.y));
     }
 }
+
+void PropertyPanel::ShowSelectionCount(size_t count) {
+    m_grid->Clear();
+    m_grid->Append(new wxPropertyCategory(U8("多选")));
+    RO(m_grid, U8("元件数量"), wxString::Format("%zu", count));
+    RO(m_grid, U8("操作"), U8("拖动整组、Delete 删除、编辑菜单封存为子电路"));
+}

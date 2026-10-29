@@ -16,6 +16,7 @@ public:
 
     /// 显示选中元件(只读);传 nullptr = 当前没有选中元件。
     void ShowComponent(const editor::Component* c);
+    void ShowSelectionCount(size_t count);
 
 private:
     wxPropertyGrid* m_grid = nullptr;

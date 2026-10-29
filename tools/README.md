@@ -1,7 +1,7 @@
 # tools · GUI 验证工具(负责人 B)
 
-这目录**不属于构建**:`CMakeLists.txt` 的 `GLOB_RECURSE` 只收 `src/`,这里不会被编进
-`CircuitEditor`,也不会给 `cmake --build` 增加任何目标。它们是开发期用来做端到端核对的脚本。
+本目录是开发期端到端验证工具，不编入主程序。开启 `BUILD_VERIFY_TOOLS=ON` 时，
+现有 CMake 会单独构建 `ui_verify`；默认关闭，不需要修改共享构建文件。
 
 ## 为什么这样验证(GUI 自动化)
 
@@ -78,3 +78,12 @@ python3 tools/verify_issues14.py    # 画布平移(issue 1)+ 局部重绘/性能
   对不上,要用"已知逻辑位置的元件"标定画布原点(见 `verify_issues14.py`)。
 - **网格比较注意周期**:粗网格线间距 200px,基准图要取"上一次平移之后"的。
 - **栅格吸附**:放置 / 拖动都吸附 20 逻辑像素,脚本坐标直接用 20 的倍数。
+
+## B · 第七周更新（2026-10-29）
+
+`perf <n> <motions>` 每轮新建图纸后放置准确数量，输出 `n` 和 `actual`；仅用于验证台，
+会替换验证台当前内容。`verify_issues14.py` 核对实际数量与原40ms门槛，不放宽阈值。
+三个独立编译脚本的 UI 源文件列表已包含 `subcircuit_library.cpp`。
+
+新功能和Bug定向测试见 `tests/b_subcircuit_test.cpp`、`tests/b_bug_audit.cpp`、
+`tests/b_perf_count_probe.py`；构建/结果详见 [B-TODOLIST](../docs/B-TODOLIST.md)。

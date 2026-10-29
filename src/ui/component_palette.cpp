@@ -16,6 +16,11 @@ public:
     explicit TypeItemData(std::string t) : type(std::move(t)) {}
     std::string type;
 };
+class FragmentItemData : public wxTreeItemData {
+public:
+    explicit FragmentItemData(SubcircuitLibrary::Item value) : item(std::move(value)) {}
+    SubcircuitLibrary::Item item;
+};
 
 } // namespace
 
@@ -39,6 +44,28 @@ ComponentPalette::ComponentPalette(wxWindow* parent)
 
 void ComponentPalette::SetTypeCallback(TypeCallback cb) {
     m_onType = std::move(cb);
+}
+
+void ComponentPalette::SetSubcircuitCallback(SubcircuitCallback cb) { m_onSubcircuit = std::move(cb); }
+
+void ComponentPalette::FillSubcircuits(const std::vector<SubcircuitLibrary::Item>& items) {
+    const auto root = m_tree->GetRootItem();
+    wxTreeItemIdValue cookie;
+    wxTreeItemId category;
+    for (auto child = m_tree->GetFirstChild(root, cookie); child.IsOk(); child = m_tree->GetNextChild(root, cookie)) {
+        if (m_tree->GetItemText(child) == U8("自定义子电路")) { category = child; break; }
+    }
+    if (!category.IsOk()) category = m_tree->AppendItem(root, U8("自定义子电路"));
+    else {
+        const auto selected = m_tree->GetSelection();
+        if (selected.IsOk() && m_tree->GetItemParent(selected) == category) ClearSelection();
+        m_tree->DeleteChildren(category);
+    }
+    for (const auto& item : items) {
+        const auto child = m_tree->AppendItem(category, item.name);
+        m_tree->SetItemData(child, new FragmentItemData(item));
+    }
+    m_tree->Expand(category);
 }
 
 void ComponentPalette::ClearSelection() {
@@ -65,8 +92,14 @@ void ComponentPalette::FillFromLibrary(const editor::ComponentLibrary& lib) {
 }
 
 void ComponentPalette::OnSelectionChanged(wxTreeEvent& evt) {
+    if (evt.GetItem().IsOk()) {
+        if (auto* fragment = dynamic_cast<FragmentItemData*>(m_tree->GetItemData(evt.GetItem()))) {
+            if (m_onSubcircuit) m_onSubcircuit(fragment->item.schematic, fragment->item.name.ToStdString(wxConvUTF8));
+            evt.Skip(); return;
+        }
+    }
     if (m_onType) {
-        auto* data = dynamic_cast<TypeItemData*>(m_tree->GetItemData(evt.GetItem()));
+        auto* data = evt.GetItem().IsOk() ? dynamic_cast<TypeItemData*>(m_tree->GetItemData(evt.GetItem())) : nullptr;
         m_onType(data == nullptr ? std::string{} : data->type);
     }
     evt.Skip();

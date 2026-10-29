@@ -17,13 +17,17 @@ wxString U8(const char* s) { return wxString::FromUTF8(s); }
 enum {
     ID_EXPORT = wxID_HIGHEST + 1,
     ID_DELETE_SEL,
+    ID_SAVE_SUBCIRCUIT,
+    ID_RELOAD_SUBCIRCUITS,
 };
 
 } // namespace
 
-UiMainFrame::UiMainFrame()
+UiMainFrame::UiMainFrame(const wxString& subcircuitDirectory)
     : wxFrame(nullptr, wxID_ANY, "Circuit Editor",
-              wxDefaultPosition, wxSize(1100, 720)) {
+              wxDefaultPosition, wxSize(1100, 720)),
+      m_subcircuits(subcircuitDirectory.empty() ? wxFileName::DirName(wxGetCwd()).GetPathWithSep() + "subcircuits"
+                                               : subcircuitDirectory) {
     SetMinSize(wxSize(820, 560));
 
     BuildMenuBar();
@@ -36,6 +40,7 @@ UiMainFrame::UiMainFrame()
     UpdateTitle();
     RefreshCounts();
     SetStatusText(U8("就绪 —— 从左侧元件库选元件,点画布放置"));
+    ReloadSubcircuits();
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +64,9 @@ void UiMainFrame::BuildMenuBar() {
     editMenu->AppendSeparator();
     editMenu->Append(ID_DELETE_SEL, U8("删除选中(&D)\tDel"),
                      U8("删除选中的元件或导线"));
+    editMenu->AppendSeparator();
+    editMenu->Append(ID_SAVE_SUBCIRCUIT, U8("封存为子电路..."));
+    editMenu->Append(ID_RELOAD_SUBCIRCUITS, U8("刷新子电路库"));
 
     auto* bar = new wxMenuBar;
     bar->Append(fileMenu, U8("文件(&F)"));
@@ -111,9 +119,15 @@ void UiMainFrame::BuildLayout() {
     m_palette->SetTypeCallback([this](const std::string& type) {
         m_canvas->SetPlacementType(type);
     });
+    m_palette->SetSubcircuitCallback([this](const editor::Schematic& schematic, const std::string& name) {
+        m_canvas->SetSubcircuitPlacement(schematic, name);
+    });
     m_canvas->SetStatusCallback([this](const wxString& text) { SetStatusText(text, 0); });
     m_canvas->SetSelectionCallback(
-        [this](const editor::Component* c) { m_props->ShowComponent(c); });
+        [this](const editor::Component* c) {
+            if (m_canvas->SelectedIds().size() > 1) m_props->ShowSelectionCount(m_canvas->SelectedIds().size());
+            else m_props->ShowComponent(c);
+        });
     m_canvas->SetChangedCallback([this]() { RefreshCounts(); });
     // 撤销 / 打开 / 新建 会把放置模式清掉,这里同步把元件树的高亮也清掉
     m_canvas->SetPlacementCallback([this](const std::string& type) {
@@ -142,6 +156,8 @@ void UiMainFrame::BindCommands() {
     Bind(wxEVT_MENU, &UiMainFrame::OnSaveAs, this, wxID_SAVEAS);
     Bind(wxEVT_MENU, &UiMainFrame::OnExportNetlist, this, ID_EXPORT);
     Bind(wxEVT_MENU, &UiMainFrame::OnDeleteSelection, this, ID_DELETE_SEL);
+    Bind(wxEVT_MENU, &UiMainFrame::OnSaveSubcircuit, this, ID_SAVE_SUBCIRCUIT);
+    Bind(wxEVT_MENU, &UiMainFrame::OnReloadSubcircuits, this, ID_RELOAD_SUBCIRCUITS);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) { Close(true); }, wxID_EXIT);
 
     Bind(wxEVT_TOOL, &UiMainFrame::OnNew, this, wxID_NEW);
@@ -154,6 +170,34 @@ void UiMainFrame::BindCommands() {
     Bind(wxEVT_TOOL, &UiMainFrame::OnRedo, this, wxID_REDO);
     Bind(wxEVT_UPDATE_UI, &UiMainFrame::OnUpdateUndo, this, wxID_UNDO);
     Bind(wxEVT_UPDATE_UI, &UiMainFrame::OnUpdateRedo, this, wxID_REDO);
+}
+
+void UiMainFrame::ReloadSubcircuits() {
+    const auto skipped = m_subcircuits.Reload();
+    m_palette->FillSubcircuits(m_subcircuits.Items());
+    if (skipped) SetStatusText(wxString::Format(U8("已跳过 %zu 个无法读取或不兼容的子电路文件"), skipped), 0);
+}
+
+void UiMainFrame::OnReloadSubcircuits(wxCommandEvent&) {
+    m_canvas->ClearPlacementType();
+    ReloadSubcircuits();
+}
+
+void UiMainFrame::OnSaveSubcircuit(wxCommandEvent&) {
+    editor::Schematic fragment;
+    wxString error;
+    if (!m_canvas->ExportSelection(&fragment, &error)) { SetStatusText(error, 0); return; }
+    wxTextEntryDialog dialog(this, U8("输入子电路名称（自动添加 .json）"), U8("封存为子电路"));
+    if (dialog.ShowModal() != wxID_OK) return;
+    wxString name = dialog.GetValue(); name.Trim().Trim(false);
+    bool overwrite = false;
+    if (wxFileName(m_subcircuits.Directory(), name + ".json").FileExists()) {
+        overwrite = wxMessageBox(U8("已有同名子电路，是否覆盖？"), U8("确认覆盖"), wxYES_NO | wxNO_DEFAULT, this) == wxYES;
+        if (!overwrite) return;
+    }
+    if (!m_subcircuits.Save(name, fragment, overwrite, &error)) { SetStatusText(error, 0); return; }
+    ReloadSubcircuits();
+    SetStatusText(U8("已封存子电路：") + name, 0);
 }
 
 // ---------------------------------------------------------------------------

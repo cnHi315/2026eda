@@ -57,7 +57,7 @@ def build_harness():
     libs = subprocess.run(["wx-config", "--libs", "core,base,propgrid"],
                           capture_output=True, text=True).stdout.split()
     sources = [os.path.join(REPO, "src/ui", f"{n}.cpp") for n in
-               ("canvas_panel", "component_palette", "main_frame", "property_panel")]
+               ("canvas_panel", "component_palette", "main_frame", "property_panel", "subcircuit_library")]
     sources += [os.path.join(REPO, "src/model/schematic_model.cpp"),
                 os.path.join(REPO, "src/components/component_library.cpp"),
                 os.path.join(REPO, "src/io/netlist_io.cpp"),
@@ -297,7 +297,10 @@ def main():
     # ⑥ issue 4:元件数量大时的逐帧耗时
     for n in (400, 1000):
         h.send(f"perf {n} 60")
-        check(f"性能:放置 {n} 个元件后拖拽", bool(h.perf), h.perf[-1])
+        report = h.perf[-1] if h.perf else ""
+        match = re.search(r"n=(\d+) actual=(\d+)", report)
+        check(f"性能:实际 {n} 个元件后拖拽", match is not None and
+              int(match.group(1)) == n and int(match.group(2)) == n, report)
     avgs = [float(re.search(r"avg=([\d.]+)ms", t).group(1)) for t in h.perf]
     check("性能:1000 元件下平均每帧 < 40ms(>25fps)", avgs[-1] < 40.0,
           f"400 元件 {avgs[0]:.2f}ms / 1000 元件 {avgs[1]:.2f}ms 每帧")
