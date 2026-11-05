@@ -13,7 +13,7 @@ namespace editor {
 class ComponentLibrary;
 } // namespace editor
 
-class wxTreeCtrl;
+class wxGenericTreeCtrl;
 class wxTreeEvent;
 
 class ComponentPalette : public wxPanel {
@@ -37,7 +37,7 @@ public:
 private:
     void OnSelectionChanged(wxTreeEvent& evt);
 
-    wxTreeCtrl* m_tree = nullptr;
+    wxGenericTreeCtrl* m_tree = nullptr;
     TypeCallback m_onType;
     SubcircuitCallback m_onSubcircuit;
 };

@@ -5,12 +5,14 @@
 #include <wx/file.h>
 #include <wx/modalhook.h>
 #include <wx/treectrl.h>
+#include <wx/generic/treectlg.h>
 #include <wx/textdlg.h>
 #include <iostream>
 #include <set>
 #include "ui/canvas_panel.h"
 #include "ui/main_frame.h"
 #include "ui/subcircuit_library.h"
+#include "ui/ui_theme.h"
 #include "model/schematic_model.h"
 #include "simulation/simulator.h"
 #include "io/netlist_io.h"
@@ -30,7 +32,7 @@ public:
         if (auto* text = dynamic_cast<wxTextEntryDialog*>(dialog)) {
             ++texts; text->SetValue(name); return wxID_OK;
         }
-        if (dynamic_cast<wxMessageDialog*>(dialog)) {
+        if (dynamic_cast<ui_theme::ConfirmDialog*>(dialog)) {
             ++confirms; return overwrite ? wxID_YES : wxID_NO;
         }
         return wxID_NONE;
@@ -43,7 +45,7 @@ public:
         temporary = wxFileName::CreateTempFileName("2026eda-b-subcircuit-");
         wxRemoveFile(temporary);
         frame = new wxFrame(nullptr, wxID_ANY, "B subcircuit tests", wxDefaultPosition, wxSize(900,650));
-        canvas = new CanvasPanel(frame); canvas->Attach(&model, &sim);
+        canvas = new CanvasPanel(frame); canvas->SetSnapStep(20); canvas->Attach(&model, &sim);
         auto* sizer = new wxBoxSizer(wxVERTICAL); sizer->Add(canvas,1,wxEXPAND); frame->SetSizer(sizer);
         canvas->SetStatusCallback([this](const wxString& s) { status=s; });
         frame->Show();
@@ -78,7 +80,7 @@ private:
         auto* bar=window->GetMenuBar();
         for (size_t i=0;i<bar->GetMenuCount();++i)
             for (auto* item:bar->GetMenu(i)->GetMenuItems())
-                if (item->GetItemLabelText()==wxString::FromUTF8("封存为子电路...")) return item->GetId();
+                if (item->GetItemLabelText().StartsWith(wxString::FromUTF8("封存为子电路"))) return item->GetId();
         return wxID_NONE;
     }
     void Run() {
@@ -136,7 +138,7 @@ private:
         const auto selected=canvas->SelectedIds();
         std::string sourceId; for(const auto& id:selected) if(model.findComponent(id)->type=="SWITCH") sourceId=id;
         Mouse(wxEVT_LEFT_DOWN,100,420); Mouse(wxEVT_MOTION,140,440); Mouse(wxEVT_LEFT_UP,140,440);
-        Check("drag moves both selected components together",model.findComponent(sourceId)->pos.x==140 && model.findComponent(sourceId)->pos.y==440 && canvas->SelectedIds().size()==2);
+        Check("drag moves the captured group and releases selection",model.findComponent(sourceId)->pos.x==140 && model.findComponent(sourceId)->pos.y==440 && canvas->SelectedIds().empty());
         Check("group move is one undo",canvas->Undo() && model.findComponent(sourceId)->pos.x==100);
         Check("group move is one redo",canvas->Redo() && model.findComponent(sourceId)->pos.x==140);
         Box(60,390,380,570);
@@ -178,7 +180,7 @@ private:
 
         auto* main=new UiMainFrame(temporary); main->Show(); wxYield();
         auto* original=canvas; canvas=FindChild<CanvasPanel>(main);
-        auto* tree=FindChild<wxTreeCtrl>(main);
+        auto* tree=FindChild<wxGenericTreeCtrl>(main);
         wxTreeItemIdValue cookie; wxTreeItemId category;
         for(auto item=tree->GetFirstChild(tree->GetRootItem(),cookie);item.IsOk();item=tree->GetNextChild(tree->GetRootItem(),cookie))
             if(tree->GetItemText(item)==wxString::FromUTF8("自定义子电路")) category=item;

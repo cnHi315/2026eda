@@ -2,7 +2,9 @@
 // Build separately; no change to the shared CMakeLists.txt is required.
 #include <wx/wx.h>
 #include <wx/modalhook.h>
+#include <wx/uiaction.h>
 #include <wx/treectrl.h>
+#include <wx/generic/treectlg.h>
 #include <iostream>
 #include <string>
 
@@ -38,7 +40,7 @@ class BugAudit : public wxApp {
 public:
     bool OnInit() override {
         frame = new wxFrame(nullptr, wxID_ANY, "B bug audit", wxDefaultPosition, wxSize(900, 650));
-        canvas = new CanvasPanel(frame);
+        canvas = new CanvasPanel(frame); canvas->SetSnapStep(20);
         auto* layout = new wxBoxSizer(wxVERTICAL);
         layout->Add(canvas, 1, wxEXPAND);
         frame->SetSizer(layout);
@@ -71,11 +73,12 @@ private:
         if (ok) ++passed; else ++knownBugs;
         std::cout << (ok ? "[PASS] " : "[BUG] ") << name << std::endl;
     }
-    void Mouse(wxEventType type, int x, int y) {
+    void Mouse(wxEventType type, int x, int y, long timestamp = 0) {
         wxMouseEvent event(type);
         event.SetEventObject(canvas);
+        event.SetTimestamp(timestamp);
         event.SetPosition(wxPoint(x, y));
-        event.SetLeftDown(type == wxEVT_LEFT_DOWN || type == wxEVT_MOTION);
+        event.SetLeftDown(type == wxEVT_LEFT_DOWN || type == wxEVT_LEFT_DCLICK || type == wxEVT_MOTION);
         canvas->ProcessWindowEvent(event);
     }
     void Key(int key) {
@@ -137,6 +140,9 @@ private:
         Check("B-BUG-003 grid stays at 20 logical units without double scaling",
               pixels && major.Red() == 215 && minor.Red() == 235 && background.Red() == 255);
 
+        wxColour halfLine, primaryLine, freeSpace;
+        grid.GetPixel(110,17,&halfLine);grid.GetPixel(120,17,&primaryLine);grid.GetPixel(111,17,&freeSpace);
+        Check("B-BUG-011 half-step geometry has a lighter 10-unit guide grid",halfLine==wxColour(246,246,246)&&primaryLine==wxColour(235,235,235)&&freeSpace==wxColour(255,255,255));
         editor::ComponentLibrary library;
         for (const auto& type : library.types()) {
             Reset(); Place(type.c_str(), 300, 240);
@@ -201,6 +207,35 @@ private:
         Check("viewport culling retains wires crossing from outside endpoints",
               wirePixels.GetPixel(400,300,&wireColour) && wireColour.Red()==0 && wireColour.Green()==95 && wireColour.Blue()==0);
 
+        // Timestamped physical-press stream: GTK emits down,double,down for
+        // triples, so the next pair can consist of two ordinary down events.
+        Reset(); Place("SWITCH",100,160); canvas->ClearHistory();
+        const auto press=[this](wxEventType type,long time,int x=100,int y=160){Mouse(type,x,y,time);Mouse(wxEVT_LEFT_UP,x,y,time+20);};
+        const wxEventType stream[]={wxEVT_LEFT_DOWN,wxEVT_LEFT_DCLICK,wxEVT_LEFT_DOWN,wxEVT_LEFT_DOWN,wxEVT_LEFT_DCLICK,wxEVT_LEFT_DOWN};
+        bool everyPair=true;
+        for(int i=0;i<6;++i){press(stream[i],1000+i*100);everyPair=everyPair&&(sim.query("SW1",0)==(((i+1)/2)%2?editor::SignalLevel::High:editor::SignalLevel::Low));}
+        Check("B-BUG-009 rapid native triple grouping still toggles every two clicks",everyPair&&!canvas->HasCapture()&&!canvas->CanUndo());
+        press(wxEVT_LEFT_DCLICK,10000);
+        Check("B-BUG-009 expired double event is a single selection, without delayed toggle",sim.query("SW1",0)==editor::SignalLevel::High);
+        press(wxEVT_LEFT_DOWN,10100);
+        Check("B-BUG-009 a fresh second click after the pause toggles exactly once",sim.query("SW1",0)==editor::SignalLevel::Low);
+        press(wxEVT_LEFT_DOWN,20000);Key(WXK_ESCAPE);press(wxEVT_LEFT_DOWN,20100);
+        Check("B-BUG-009 Escape clears the previous click candidate",sim.query("SW1",0)==editor::SignalLevel::Low);
+        Mouse(wxEVT_LEFT_DOWN,100,160,30000);Mouse(wxEVT_MOTION,140,160,30050);Mouse(wxEVT_LEFT_UP,140,160,30080);press(wxEVT_LEFT_DOWN,30100,140,160);
+        Check("B-BUG-009 dragging cannot become the first half of a toggle",sim.query("SW1",0)==editor::SignalLevel::Low&&model.findComponent("SW1")->pos.x==140);
+        press(wxEVT_LEFT_DOWN,40000,140,160);canvas->OnDocumentReplaced();press(wxEVT_LEFT_DOWN,40100,140,160);
+        Check("B-BUG-009 document replacement clears the previous click candidate",sim.query("SW1",0)==editor::SignalLevel::Low);
+        if(wxGetenv("B_GRAY_NATIVE_POINTER")) {
+            Reset();Place("SWITCH",100,160);canvas->ClearHistory();wxUIActionSimulator pointer;canvas->SetFocus();pointer.MouseMove(canvas->ClientToScreen({100,160}));wxMilliSleep(650);wxYield();
+            bool nativePairs=true,delivered=true;
+            for(int i=0;i<12;++i){delivered=pointer.MouseClick()&&delivered;wxMilliSleep(100);wxYield();nativePairs=nativePairs&&(sim.query("SW1",0)==(((i+1)/2)%2?editor::SignalLevel::High:editor::SignalLevel::Low));}
+            Check("B-BUG-009 twelve display-server clicks produce six alternating toggles",delivered&&nativePairs&&!canvas->HasCapture()&&!canvas->CanUndo());
+            wxMilliSleep(650);wxYield();pointer.MouseClick();wxMilliSleep(50);wxYield();
+            Check("B-BUG-009 a delayed native single click does not toggle",sim.query("SW1",0)==editor::SignalLevel::Low);
+            pointer.MouseClick();wxMilliSleep(50);wxYield();
+            Check("B-BUG-009 second native click toggles after an idle gap",sim.query("SW1",0)==editor::SignalLevel::High);
+        }
+
         Reset(); Place("SWITCH", 100, 160); Toggle(100, 160);
         Check("switch starts High before undo audit", sim.query("SW1", 0) == editor::SignalLevel::High);
         Place("AND", 300, 240); canvas->Update(); Snapshot("switch-before-undo");
@@ -222,7 +257,7 @@ private:
 
         auto* main = new UiMainFrame(); main->Show(); wxYield();
         auto* actualCanvas = Child<CanvasPanel>(main);
-        auto* tree = Child<wxTreeCtrl>(main);
+        auto* tree = Child<wxGenericTreeCtrl>(main);
         wxTreeItemIdValue cookie;
         tree->SelectItem(tree->GetFirstChild(tree->GetRootItem(), cookie));
         wxYield();

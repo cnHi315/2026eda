@@ -2,6 +2,8 @@
 
 #include <wx/wx.h>
 #include <wx/dcbuffer.h>
+#include <wx/settings.h>
+#include <cstdint>
 
 #include <algorithm>
 #include <cmath>
@@ -10,6 +12,7 @@
 #include "model/schematic_model.h"
 #include "simulation/simulator.h"
 #include "ui/subcircuit_library.h"
+#include "ui/ui_theme.h"
 
 namespace {
 
@@ -37,11 +40,13 @@ CanvasPanel::CanvasPanel(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
               wxFULL_REPAINT_ON_RESIZE) {
     SetBackgroundStyle(wxBG_STYLE_PAINT);   // 配合 wxAutoBufferedPaintDC,避免闪烁
-    SetBackgroundColour(*wxWHITE);
+    SetBackgroundColour(ui_theme::Surface());
+    SetName(U8("原理图画布"));
     SetMinSize(FromDIP(wxSize(400, 300)));
 
     Bind(wxEVT_PAINT, &CanvasPanel::OnPaint, this);
     Bind(wxEVT_SIZE, &CanvasPanel::OnSize, this);
+    Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& e) { ClearSwitchClick(); e.Skip(); });
     Bind(wxEVT_LEFT_DOWN, &CanvasPanel::OnLeftDown, this);
     Bind(wxEVT_LEFT_DCLICK, &CanvasPanel::OnLeftDClick, this);
     Bind(wxEVT_MOTION, &CanvasPanel::OnMotion, this);
@@ -129,6 +134,7 @@ bool CanvasPanel::ExportSelection(editor::Schematic* fragment, wxString* error) 
 }
 
 void CanvasPanel::OnDocumentReplaced(bool clearSwitchLevels) {
+    ClearSwitchClick();
     EndInteraction();
     m_sel = HitResult{};
     m_hover = HitResult{};
@@ -198,12 +204,34 @@ void CanvasPanel::OnSize(wxSizeEvent& evt) {
     evt.Skip();
 }
 
+bool CanvasPanel::SetSnapStep(int step) {
+    if (step != 1 && step != 5 && step != 10 && step != 20) return false;
+    ClearSwitchClick(); m_snapStep = step;
+    return true;
+}
+
+bool CanvasPanel::NudgeSelection(const editor::Point& delta) {
+    if (!m_model || m_mode != Mode::Idle || m_selectedIds.empty()) return false;
+    const auto before = S();
+    bool moved = false;
+    for (const auto& id : m_selectedIds) {
+        const auto* c = m_model->findComponent(id);
+        if (c) moved = m_model->moveElement(id, {c->pos.x + delta.x, c->pos.y + delta.y}) || moved;
+    }
+    if (!moved) return false;
+    PushUndoSnapshot(before); NotifyChanged(); NotifySelection(); Refresh();
+    SetStatus(U8("已微调选中元件（方向键1单位，Shift+方向键10单位）"));
+    return true;
+}
+
 void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
     SetFocus();   // 让 Esc / Delete 这类按键事件能送到本面板
 
     const editor::Point p = ToLogical(evt.GetPosition());
     m_mouseLogical = p;
     const HitResult hit = HitTest(p);
+
+    if (HandleSwitchPress(evt, hit)) return;
 
     if (evt.ControlDown() && (hit.IsComponent() || hit.IsPin())) {
         if (m_selectedIds.count(hit.id)) m_selectedIds.erase(hit.id);
@@ -261,9 +289,9 @@ void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
         return;
     }
 
-    if (m_placeFragment) { PlaceFragmentAt(p); return; }
+    if (m_placeFragment) { PlaceFragmentAt(p, evt.AltDown()); return; }
     if (!m_placeType.empty()) {                          // —— 放置元件 ——
-        PlaceAt(p);
+        PlaceAt(p, evt.AltDown());
         return;
     }
 
@@ -279,24 +307,54 @@ void CanvasPanel::OnLeftDown(wxMouseEvent& evt) {
 }
 
 void CanvasPanel::OnLeftDClick(wxMouseEvent& evt) {
-    if (m_mode != Mode::Idle) {
-        evt.Skip();
-        return;
-    }
     const HitResult hit = HitTest(ToLogical(evt.GetPosition()));
-    if (hit.IsComponent() || hit.IsPin()) {
-        const editor::Component* c = Find(hit.id);
-        if (c != nullptr && IsSwitch(*c)) {
-            ToggleSwitch(hit.id);                        // 双击开关 = 拨动
-            return;
-        }
+    const auto* component = (hit.IsComponent() || hit.IsPin()) ? Find(hit.id) : nullptr;
+    if (evt.ControlDown() || !component || !IsSwitch(*component)) {
+        ClearSwitchClick(); evt.Skip(); return;
     }
-    evt.Skip();
+    // Native double events and ordinary presses share the same clock: GTK
+    // groups rapid triples, while a switch should toggle once per click pair.
+    if (evt.GetTimestamp() > 0) { OnLeftDown(evt); return; }
+    // Without a usable timestamp, retain explicit double-click semantics.
+    ClearSwitchClick();
+    if (m_mode == Mode::Idle) ToggleSwitch(hit.id);
+    else evt.Skip();
+}
+
+void CanvasPanel::ClearSwitchClick() {
+    m_switchClickId.clear(); m_switchClickTime = 0; m_switchClickReleased = false;
+}
+
+bool CanvasPanel::HandleSwitchPress(wxMouseEvent& evt, const HitResult& hit) {
+    const auto* component = (hit.IsComponent() || hit.IsPin()) ? Find(hit.id) : nullptr;
+    if (evt.GetTimestamp() <= 0 || evt.ControlDown() || m_panning ||
+        m_mode != Mode::Idle || !component || !IsSwitch(*component)) {
+        ClearSwitchClick(); return false;
+    }
+    const auto now = static_cast<uint32_t>(evt.GetTimestamp());
+    const int configured = wxSystemSettings::GetMetric(wxSYS_DCLICK_MSEC);
+    const auto interval = static_cast<uint32_t>(configured > 0 ? configured : 500);
+    const int configuredX = wxSystemSettings::GetMetric(wxSYS_DCLICK_X);
+    const int configuredY = wxSystemSettings::GetMetric(wxSYS_DCLICK_Y);
+    const int dx = configuredX > 0 ? configuredX : 4;
+    const int dy = configuredY > 0 ? configuredY : 4;
+    const bool pair = m_switchClickReleased && m_switchClickId == hit.id &&
+        static_cast<uint32_t>(now - static_cast<uint32_t>(m_switchClickTime)) <= interval &&
+        std::abs(evt.GetX() - m_switchClickPoint.x) <= dx &&
+        std::abs(evt.GetY() - m_switchClickPoint.y) <= dy;
+    ClearSwitchClick();
+    if (pair) { ToggleSwitch(hit.id); return true; }
+    m_switchClickId = hit.id; m_switchClickTime = now;
+    m_switchClickPoint = evt.GetPosition();
+    return false;
 }
 
 void CanvasPanel::OnMotion(wxMouseEvent& evt) {
     const editor::Point p = ToLogical(evt.GetPosition());
     m_mouseLogical = p;
+    if (!m_switchClickId.empty() && m_mode == Mode::DrawingWire &&
+        (std::abs(evt.GetX()-m_switchClickPoint.x)>3 || std::abs(evt.GetY()-m_switchClickPoint.y)>3))
+        ClearSwitchClick();
 
     if (m_panning) {                                     // 中键拖动 = 平移视图
         m_origin = m_panStartOrigin + (evt.GetPosition() - m_panStartMouse);
@@ -317,10 +375,15 @@ void CanvasPanel::OnMotion(wxMouseEvent& evt) {
             std::abs(raw.x - m_dragOrig.x) <= 3 && std::abs(raw.y - m_dragOrig.y) <= 3) {
             return;                                      // 仍在"单击抖动"范围内:先不动
         }
-        m_dragMoved = true;
-
         wxRect oldArea = DragArea();
-        MoveDraggedTo(SnapToGrid(raw));
+        if (!m_dragMoved) {
+            m_dragMoved = true;
+            // Keep the captured group for movement, while clearing selection.
+            m_selectedIds.clear(); m_sel = {}; m_hover = {};
+            NotifySelection();
+        }
+        ClearSwitchClick();
+        MoveDraggedTo(SnapToGrid(raw, evt.AltDown()));
         if (!oldArea.IsEmpty()) {
             RefreshRect(oldArea);
         }
@@ -365,6 +428,16 @@ void CanvasPanel::OnMotion(wxMouseEvent& evt) {
 
 void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
     const editor::Point p = ToLogical(evt.GetPosition());
+    if (!m_switchClickId.empty()) {
+        const auto hit = HitTest(p);
+        const bool same = (hit.IsComponent() || hit.IsPin()) && hit.id == m_switchClickId;
+        const bool click = (m_mode == Mode::DraggingComponent && !m_dragMoved) ||
+            (m_mode == Mode::DrawingWire && hit.IsPin() &&
+             hit.id == m_wireFrom.componentId && hit.pinIndex == m_wireFrom.pinIndex);
+        if (same && click) m_switchClickReleased = true;
+        else ClearSwitchClick();
+    }
+
 
     if (m_mode == Mode::SelectingBox) {
         m_boxEnd = p;
@@ -387,7 +460,7 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
         const std::string id = m_dragId;
         if (m_dragMoved) {
             const editor::Point target =
-                SnapToGrid(editor::Point{p.x - m_dragGrab.x, p.y - m_dragGrab.y});
+                SnapToGrid(editor::Point{p.x - m_dragGrab.x, p.y - m_dragGrab.y}, evt.AltDown());
             // 实时位置已改变；整组确认落点后，按按下时的快照只提交一次历史。
             if (target.x != m_dragOrig.x || target.y != m_dragOrig.y) {
                 MoveDraggedTo(target);
@@ -401,6 +474,7 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
             SetStatus(U8("选中 ") + wxString::FromUTF8(id.c_str()));
         }
         EndInteraction();
+        NotifySelection();
         Refresh();
         return;
     }
@@ -431,6 +505,7 @@ void CanvasPanel::OnLeftUp(wxMouseEvent& evt) {
 }
 
 void CanvasPanel::OnLeaveWindow(wxMouseEvent& evt) {
+    if (m_mode == Mode::Idle) ClearSwitchClick();
     if (m_mode == Mode::Idle && !m_hover.IsNone()) {
         m_hover = HitResult{};
         Refresh();
@@ -439,6 +514,7 @@ void CanvasPanel::OnLeaveWindow(wxMouseEvent& evt) {
 }
 
 void CanvasPanel::OnCaptureLost(wxMouseCaptureLostEvent&) {
+    ClearSwitchClick();
     // 系统抢走鼠标捕获时必须复位,否则状态机会卡在拖拽/连线态。
     if (m_panning) {
         m_panning = false;
@@ -446,14 +522,16 @@ void CanvasPanel::OnCaptureLost(wxMouseCaptureLostEvent&) {
         return;
     }
     if (m_mode != Mode::Idle) {
-        if (m_mode == Mode::DraggingComponent) MoveDraggedTo(m_dragOrig);
+        if (m_mode == Mode::DraggingComponent) { MoveDraggedTo(m_dragOrig); RestoreDragSelection(); }
         if (m_mode == Mode::SelectingBox) { m_selectedIds = m_boxBefore; UpdateSelectionFocus(); NotifySelection(); }
         CancelInteraction(U8("操作已取消"));
+        NotifySelection();
         Refresh();
     }
 }
 
 void CanvasPanel::OnMiddleDown(wxMouseEvent& evt) {
+    ClearSwitchClick();
     if (m_mode != Mode::Idle) return;
     SetFocus();
     m_panning = true;
@@ -481,6 +559,7 @@ void CanvasPanel::OnMiddleUp(wxMouseEvent& evt) {
 }
 
 void CanvasPanel::OnMouseWheel(wxMouseEvent& evt) {
+    ClearSwitchClick();
     // 滚轮 = 纵向滚动,Shift+滚轮(或触摸板横扫)= 横向滚动;步长取一个栅格
     const int rotation = evt.GetWheelRotation();
     if (rotation == 0) {
@@ -495,12 +574,15 @@ void CanvasPanel::OnMouseWheel(wxMouseEvent& evt) {
 }
 
 void CanvasPanel::OnKeyDown(wxKeyEvent& evt) {
+    ClearSwitchClick();
     const int code = evt.GetKeyCode();
 
     if (code == WXK_ESCAPE) {
         if (m_mode == Mode::DraggingComponent) {
             MoveDraggedTo(m_dragOrig);  // Esc:还原整组,不入栈
+            RestoreDragSelection();
             CancelInteraction(U8("已取消拖动(位置已还原)"));
+            NotifySelection();
             Refresh();
             return;
         }
@@ -521,6 +603,13 @@ void CanvasPanel::OnKeyDown(wxKeyEvent& evt) {
         }
     }
 
+    if (!evt.ControlDown() && (code == WXK_LEFT || code == WXK_RIGHT || code == WXK_UP || code == WXK_DOWN)) {
+        const int step = evt.ShiftDown() ? 10 : 1;
+        const editor::Point delta{code == WXK_LEFT ? -step : code == WXK_RIGHT ? step : 0,
+                                  code == WXK_UP ? -step : code == WXK_DOWN ? step : 0};
+        if (NudgeSelection(delta)) return;
+    }
+
     if (code == WXK_DELETE || code == WXK_NUMPAD_DELETE) {
         DeleteSelection();
         return;
@@ -533,11 +622,11 @@ void CanvasPanel::OnKeyDown(wxKeyEvent& evt) {
 // 写操作(全部走 SchematicModel)
 // ---------------------------------------------------------------------------
 
-bool CanvasPanel::PlaceAt(const editor::Point& logical) {
+bool CanvasPanel::PlaceAt(const editor::Point& logical, bool bypass) {
     if (m_model == nullptr || m_placeType.empty()) {
         return false;
     }
-    const editor::Point pos = SnapToGrid(logical);
+    const editor::Point pos = SnapToGrid(logical, bypass);
     const editor::Schematic before = S();                 // 失败不入栈,先留一份旧数据
     const std::string id = m_model->addElement(m_placeType, pos);
     if (id.empty()) {
@@ -561,10 +650,10 @@ bool CanvasPanel::PlaceAt(const editor::Point& logical) {
     return true;
 }
 
-bool CanvasPanel::PlaceFragmentAt(const editor::Point& logical) {
+bool CanvasPanel::PlaceFragmentAt(const editor::Point& logical, bool bypass) {
     if (!m_model || !m_placeFragment) return false;
     const auto before = S();
-    const auto created = m_model->instantiate(m_fragment, SnapToGrid(logical));
+    const auto created = m_model->instantiate(m_fragment, SnapToGrid(logical, bypass));
     if (created.size() != m_fragment.components.size()) {
         m_model->loadFrom(before);
         m_indexDirty = true;
@@ -874,9 +963,10 @@ bool CanvasPanel::PinRefLogicalPos(const editor::PinRef& pin, editor::Point* out
     return true;
 }
 
-editor::Point CanvasPanel::SnapToGrid(const editor::Point& p) {
-    const auto snap = [](int v) {
-        return static_cast<int>(std::lround(static_cast<double>(v) / kGridStep)) * kGridStep;
+editor::Point CanvasPanel::SnapToGrid(const editor::Point& p, bool bypass) const {
+    const int step = bypass ? 1 : m_snapStep;
+    const auto snap = [step](int v) {
+        return static_cast<int>(std::lround(static_cast<double>(v) / step)) * step;
     };
     return editor::Point{snap(p.x), snap(p.y)};
 }
@@ -931,6 +1021,15 @@ void CanvasPanel::DrawGrid(wxDC& dc) const {
         return origin + k * stepPx;
     };
 
+    // Existing 60x40 symbols and pin offsets use 10-unit half steps. Keep
+    // the reference grid independent of the selectable snapping precision.
+    const int subdivision = std::max(1, step / 2);
+    dc.SetPen(wxPen(wxColour(246, 246, 246), 1));
+    for (int x = firstLine(clip.x, m_origin.x, subdivision); x <= xEnd; x += subdivision)
+        dc.DrawLine(x, clip.y, x, yEnd);
+    for (int y = firstLine(clip.y, m_origin.y, subdivision); y <= yEnd; y += subdivision)
+        dc.DrawLine(clip.x, y, xEnd, y);
+
     dc.SetPen(wxPen(wxColour(235, 235, 235), 1));        // 细线
     for (int x = firstLine(clip.x, m_origin.x, step); x <= xEnd; x += step) {
         dc.DrawLine(x, clip.y, x, yEnd);
@@ -950,20 +1049,27 @@ void CanvasPanel::DrawGrid(wxDC& dc) const {
 
 void CanvasPanel::DrawEmptyHint(wxDC& dc) const {
     const wxSize sz = GetClientSize();
-    dc.SetTextForeground(wxColour(150, 150, 150));
-    dc.SetFont(wxFontInfo(11));
-
-    const wxString line1 = m_placeFragment
-                               ? U8("放置子电路：") + wxString::FromUTF8(m_fragmentName.c_str()) + U8(" —— 点击空白处放置；Esc 退出")
-                               : m_placeType.empty()
-                               ? U8("从左侧元件库选择元件 → 点击画布放置")
-                               : U8("放置模式:") + wxString::FromUTF8(m_placeType.c_str()) +
-                                     U8(" —— 点击画布放置;Esc 退出");
-    const wxString line2 = U8("放好元件后:从引脚拖到引脚连线;双击开关拨动电平");
-    wxSize s1 = dc.GetTextExtent(line1);
-    wxSize s2 = dc.GetTextExtent(line2);
-    dc.DrawText(line1, (sz.x - s1.x) / 2, sz.y / 2 - s1.y);
-    dc.DrawText(line2, (sz.x - s2.x) / 2, sz.y / 2 + s2.y / 2);
+    const bool placing = m_placeFragment || !m_placeType.empty();
+    const wxString title = m_placeFragment
+        ? U8("放置子电路：") + wxString::FromUTF8(m_fragmentName.c_str())
+        : placing ? U8("放置元件：") + wxString::FromUTF8(m_placeType.c_str())
+                  : U8("开始绘制电路");
+    const auto centered = [&dc, sz](const wxString& text, int y) {
+        const wxString fitted = wxControl::Ellipsize(text, dc, wxELLIPSIZE_MIDDLE, std::max(0, sz.x - 48));
+        dc.DrawText(fitted, (sz.x - dc.GetTextExtent(fitted).x) / 2, y);
+    };
+    dc.SetFont(ui_theme::Font(29, true));
+    dc.SetTextForeground(ui_theme::Ink());
+    const int headingHeight = dc.GetCharHeight();
+    const int startY = sz.y / 2 - headingHeight - 26;
+    centered(title, startY);
+    dc.SetFont(ui_theme::Font(18));
+    dc.SetTextForeground(ui_theme::Muted());
+    centered(placing ? U8("点击空白处放置，可连续放置；Esc 退出")
+                     : U8("从左侧元件库选择元件，点击画布开始"), startY + headingHeight + 12);
+    const int captionHeight = dc.GetCharHeight();
+    dc.SetFont(ui_theme::Font(16));
+    centered(U8("放置元件  →  拖动引脚连线  →  双击开关验证"), startY + headingHeight + captionHeight + 28);
 }
 
 void CanvasPanel::DrawPinDot(wxDC& dc, const wxPoint& p, bool highlight) const {
@@ -980,14 +1086,6 @@ void CanvasPanel::DrawComponent(wxDC& dc, const editor::Component& c) const {
     const bool selected = m_selectedIds.count(c.id) != 0 || (m_sel.IsComponent() && m_sel.id == c.id);
     const bool hovered = m_hover.IsComponent() && m_hover.id == c.id;
 
-    // 选中/悬停:蓝色虚/实线外框(先画,免得盖住元件体)
-    if (selected || hovered) {
-        dc.SetPen(wxPen(wxColour(0, 90, 200), selected ? 2 : 1,
-                        selected ? wxPENSTYLE_SOLID : wxPENSTYLE_DOT));
-        dc.SetBrush(*wxTRANSPARENT_BRUSH);
-        dc.DrawRectangle(o.x - hw - 5, o.y - hh - 5, sz.w + 10, sz.h + 10);
-    }
-
     // 元件体:矩形占位(v1);开关/ LED 在体内画状态
     const editor::SignalLevel lv =
         IsSwitch(c) ? SwitchLevel(c.id)
@@ -998,7 +1096,8 @@ void CanvasPanel::DrawComponent(wxDC& dc, const editor::Component& c) const {
     if (IsSwitch(c) && lv == editor::SignalLevel::High) {
         bodyBrush = wxBrush(wxColour(212, 245, 212));    // 开关闭合:淡绿底
     }
-    dc.SetPen(wxPen(wxColour(40, 40, 40), 2));
+    if (selected) bodyBrush = wxBrush(wxColour(222, 236, 255));
+    dc.SetPen(wxPen(selected ? wxColour(0, 90, 200) : hovered ? wxColour(90,90,90) : wxColour(40,40,40), 2));
     dc.SetBrush(bodyBrush);
     dc.DrawRectangle(o.x - hw, o.y - hh, sz.w, sz.h);
 
@@ -1158,7 +1257,7 @@ void CanvasPanel::MoveDraggedTo(const editor::Point& position) {
         if (current && (current->pos.x != target.x || current->pos.y != target.y))
             changed = m_model->moveElement(entry.first, target) || changed;
     }
-    if (changed) NotifyChanged();
+    if (changed) { NotifyChanged(); NotifySelection(); }
 }
 
 wxRect CanvasPanel::DragArea() const {
@@ -1174,6 +1273,7 @@ wxRect CanvasPanel::DragArea() const {
 }
 
 void CanvasPanel::CancelInteraction(const wxString& status) {
+    ClearSwitchClick();
     EndInteraction();
     SetStatus(status);
 }
@@ -1184,12 +1284,22 @@ void CanvasPanel::SetStatus(const wxString& text) {
     }
 }
 
+size_t CanvasPanel::ActiveComponentCount() const {
+    return m_mode == Mode::DraggingComponent && m_dragMoved ? m_dragPositions.size() : m_selectedIds.size();
+}
+
+void CanvasPanel::RestoreDragSelection() {
+    m_selectedIds.clear();
+    for (const auto& entry : m_dragPositions) m_selectedIds.insert(entry.first);
+    UpdateSelectionFocus();
+}
+
 void CanvasPanel::NotifySelection() {
     if (!m_onSelection) {
         return;
     }
-    const editor::Component* sel =
-        (m_sel.IsComponent() || m_sel.IsPin()) ? Find(m_sel.id) : nullptr;
+    const editor::Component* sel = m_mode == Mode::DraggingComponent && m_dragMoved
+        ? Find(m_dragId) : (m_sel.IsComponent() || m_sel.IsPin()) ? Find(m_sel.id) : nullptr;
     m_onSelection(sel);
 }
 

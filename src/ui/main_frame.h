@@ -16,6 +16,8 @@
 class ComponentPalette;
 class CanvasPanel;
 class PropertyPanel;
+class wxPanel;
+class wxStaticText;
 
 class UiMainFrame : public wxFrame {
 public:
@@ -27,6 +29,7 @@ private:
     void BuildStatusBar();
     void BuildLayout();
     void BindCommands();
+    void UpdateCanvasHint();
 
     void OnNew(wxCommandEvent& evt);
     void OnOpen(wxCommandEvent& evt);
@@ -47,6 +50,9 @@ private:
     void RefreshCounts();
     void UpdateTitle();
 
+    wxStaticText* m_canvasHint = nullptr;
+    wxPanel* m_topBar = nullptr;
+    wxPanel* m_commandToolbar = nullptr;
     ComponentPalette* m_palette = nullptr;
     CanvasPanel* m_canvas = nullptr;
     PropertyPanel* m_props = nullptr;
