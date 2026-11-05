@@ -1,7 +1,6 @@
 #include "ui/main_frame.h"
 
 #include <wx/wx.h>
-#include <wx/artprov.h>
 #include <wx/filename.h>
 
 #include <string>
@@ -9,6 +8,7 @@
 #include "ui/canvas_panel.h"
 #include "ui/component_palette.h"
 #include "ui/property_panel.h"
+#include "ui/ui_theme.h"
 
 namespace {
 
@@ -19,16 +19,25 @@ enum {
     ID_DELETE_SEL,
     ID_SAVE_SUBCIRCUIT,
     ID_RELOAD_SUBCIRCUITS,
+    ID_FILE_MENU,
+    ID_EDIT_MENU,
+    ID_VIEW_MENU,
+    ID_SHOW_TOOLBAR,
+    ID_SHOW_PROPERTIES,
+    ID_SNAP_1, ID_SNAP_5, ID_SNAP_10, ID_SNAP_20,
 };
 
 } // namespace
 
 UiMainFrame::UiMainFrame(const wxString& subcircuitDirectory)
     : wxFrame(nullptr, wxID_ANY, "Circuit Editor",
-              wxDefaultPosition, wxSize(1100, 720)),
+              wxDefaultPosition, wxSize(1100, 800)),
       m_subcircuits(subcircuitDirectory.empty() ? wxFileName::DirName(wxGetCwd()).GetPathWithSep() + "subcircuits"
                                                : subcircuitDirectory) {
-    SetMinSize(wxSize(820, 560));
+    SetMinSize(wxSize(1000, 680));
+    SetBackgroundColour(ui_theme::Workspace());
+    SetForegroundColour(ui_theme::Ink());
+    SetFont(ui_theme::Font());
 
     BuildMenuBar();
     BuildToolBar();
@@ -65,43 +74,81 @@ void UiMainFrame::BuildMenuBar() {
     editMenu->Append(ID_DELETE_SEL, U8("删除选中(&D)\tDel"),
                      U8("删除选中的元件或导线"));
     editMenu->AppendSeparator();
-    editMenu->Append(ID_SAVE_SUBCIRCUIT, U8("封存为子电路..."));
-    editMenu->Append(ID_RELOAD_SUBCIRCUITS, U8("刷新子电路库"));
+    editMenu->Append(ID_SAVE_SUBCIRCUIT, U8("封存为子电路(&B)..."));
+    editMenu->Append(ID_RELOAD_SUBCIRCUITS, U8("刷新子电路库(&L)"));
+
+    auto* viewMenu = new wxMenu;
+    viewMenu->AppendCheckItem(ID_SHOW_TOOLBAR, U8("工具栏(&T)"))->Check(true);
+    viewMenu->AppendCheckItem(ID_SHOW_PROPERTIES, U8("元件属性(&P)"))->Check(true);
+    viewMenu->AppendSeparator();
+    viewMenu->AppendRadioItem(ID_SNAP_1,U8("吸附 1 单位(&1)"))->Check(true);
+    viewMenu->AppendRadioItem(ID_SNAP_5,U8("吸附 5 单位(&5)"));
+    viewMenu->AppendRadioItem(ID_SNAP_10,U8("吸附 10 单位(&0)"));
+    viewMenu->AppendRadioItem(ID_SNAP_20,U8("吸附 20 单位(&2)"));
 
     auto* bar = new wxMenuBar;
     bar->Append(fileMenu, U8("文件(&F)"));
     bar->Append(editMenu, U8("编辑(&E)"));
+    bar->Append(viewMenu, U8("视图(&V)"));
     SetMenuBar(bar);
+    // Keep the command definitions for accelerators and menu consumers; the
+    // visible menu triggers/popups share our controlled grey appearance.
+    bar->Hide();
+    const wxAcceleratorEntry entries[] = {
+        {wxACCEL_CTRL, 'N', wxID_NEW}, {wxACCEL_CTRL, 'O', wxID_OPEN},
+        {wxACCEL_CTRL, 'S', wxID_SAVE}, {wxACCEL_CTRL, 'E', ID_EXPORT},
+        {wxACCEL_CTRL, 'Z', wxID_UNDO}, {wxACCEL_CTRL, 'Y', wxID_REDO},
+        {wxACCEL_CTRL, 'Q', wxID_EXIT}, {wxACCEL_ALT, 'F', ID_FILE_MENU},
+        {wxACCEL_ALT, 'E', ID_EDIT_MENU}, {wxACCEL_ALT, 'V', ID_VIEW_MENU},
+        {wxACCEL_NORMAL, WXK_DELETE, ID_DELETE_SEL}
+    };
+    SetAcceleratorTable(wxAcceleratorTable(sizeof(entries)/sizeof(entries[0]),entries));
 }
 
 void UiMainFrame::BuildToolBar() {
-    auto* tb = CreateToolBar();
-    tb->AddTool(wxID_UNDO, U8("撤销"),
-                wxArtProvider::GetBitmap(wxART_UNDO, wxART_TOOLBAR),
-                U8("撤销 (Ctrl+Z)"));
-    tb->AddTool(wxID_REDO, U8("重做"),
-                wxArtProvider::GetBitmap(wxART_REDO, wxART_TOOLBAR),
-                U8("重做 (Ctrl+Y)"));
-    tb->AddSeparator();
-    tb->AddTool(wxID_NEW, U8("新建"),
-                wxArtProvider::GetBitmap(wxART_NEW, wxART_TOOLBAR),
-                U8("新建空白原理图 (Ctrl+N)"));
-    tb->AddTool(wxID_OPEN, U8("打开"),
-                wxArtProvider::GetBitmap(wxART_FILE_OPEN, wxART_TOOLBAR),
-                U8("打开 (Ctrl+O)"));
-    tb->AddTool(wxID_SAVE, U8("保存"),
-                wxArtProvider::GetBitmap(wxART_FILE_SAVE, wxART_TOOLBAR),
-                U8("保存 (Ctrl+S)"));
-    tb->AddSeparator();
-    tb->AddTool(ID_EXPORT, U8("导出网表"),
-                wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE, wxART_TOOLBAR),
-                U8("导出 KiCad 网表 (Ctrl+E)"));
-    tb->Realize();
+    m_topBar = new wxPanel(this, wxID_ANY);
+    m_topBar->SetName("B-top-bar");
+    m_topBar->SetBackgroundColour(ui_theme::Surface());
+    auto* row = new wxBoxSizer(wxHORIZONTAL);
+    const int menuIds[] = {ID_FILE_MENU, ID_EDIT_MENU, ID_VIEW_MENU};
+    const char* menuLabels[] = {"文件", "编辑", "视图"};
+    for (int i = 0; i < 3; ++i) {
+        auto* button = new ui_theme::ActionButton(m_topBar, menuIds[i], U8(menuLabels[i]), this, wxSize(64,36));
+        row->Add(button, 0, wxRIGHT, 8);
+        Bind(wxEVT_MENU, [this,button,i](wxCommandEvent&) {
+            ui_theme::ShowCommandMenu(this, GetMenuBar()->GetMenu(i), button);
+        }, menuIds[i]);
+    }
+    row->AddStretchSpacer();
+    m_commandToolbar = new wxPanel(m_topBar, wxID_ANY);
+    m_commandToolbar->SetName("B-command-toolbar");
+    m_commandToolbar->SetBackgroundColour(ui_theme::Surface());
+    auto* commands = new wxBoxSizer(wxHORIZONTAL);
+    const auto add = [this,commands](int id, const wxString& label, const wxString& help) {
+        if (!commands->IsEmpty()) commands->AddSpacer(8);
+        auto* button = new ui_theme::ActionButton(m_commandToolbar,id,label,this,wxSize(88,36));
+        button->SetToolTip(help); commands->Add(button);
+    };
+    add(wxID_NEW,U8("新建"),U8("新建空白原理图 (Ctrl+N)"));
+    add(wxID_OPEN,U8("打开"),U8("打开 JSON 原理图 (Ctrl+O)"));
+    add(wxID_SAVE,U8("保存"),U8("保存 (Ctrl+S)"));
+    add(ID_EXPORT,U8("导出网表"),U8("导出 KiCad 网表 (Ctrl+E)"));
+    add(wxID_UNDO,U8("撤销"),U8("撤销 (Ctrl+Z)"));
+    add(wxID_REDO,U8("重做"),U8("重做 (Ctrl+Y)"));
+    m_commandToolbar->SetSizer(commands);
+    row->Add(m_commandToolbar);
+    auto* padded = new wxBoxSizer(wxVERTICAL);
+    padded->Add(row, 0, wxEXPAND | wxALL, 10);
+    m_topBar->SetSizer(padded);
 }
 
 void UiMainFrame::BuildStatusBar() {
-    CreateStatusBar(2);
-    const int kWidths[] = {-1, 240};
+    auto* status = CreateStatusBar(2, wxSTB_DEFAULT_STYLE | wxSTB_ELLIPSIZE_END);
+    status->SetBackgroundColour(ui_theme::Surface());
+    status->SetForegroundColour(ui_theme::Muted());
+    status->SetFont(ui_theme::Font(16));
+    status->SetMinHeight(28);
+    const int kWidths[] = {-1, 260};
     SetStatusWidths(2, kWidths);
     SetStatusText(U8("就绪"), 0);
     SetStatusText(U8(""), 1);
@@ -109,7 +156,9 @@ void UiMainFrame::BuildStatusBar() {
 
 void UiMainFrame::BuildLayout() {
     m_palette = new ComponentPalette(this);
-    m_canvas = new CanvasPanel(this);
+    auto* workspace = new wxPanel(this, wxID_ANY);
+    ui_theme::StyleCard(workspace);
+    m_canvas = new CanvasPanel(workspace);
     m_props = new PropertyPanel(this);
 
     // —— 阶段四接线:画布 ↔ 模型 / 仿真;元件树 → 放置模式;选中 → 属性表 ——
@@ -125,7 +174,7 @@ void UiMainFrame::BuildLayout() {
     m_canvas->SetStatusCallback([this](const wxString& text) { SetStatusText(text, 0); });
     m_canvas->SetSelectionCallback(
         [this](const editor::Component* c) {
-            if (m_canvas->SelectedIds().size() > 1) m_props->ShowSelectionCount(m_canvas->SelectedIds().size());
+            if (m_canvas->ActiveComponentCount() > 1) m_props->ShowSelectionCount(m_canvas->ActiveComponentCount());
             else m_props->ShowComponent(c);
         });
     m_canvas->SetChangedCallback([this]() { RefreshCounts(); });
@@ -136,12 +185,25 @@ void UiMainFrame::BuildLayout() {
         }
     });
 
-    // 左/右固定宽度,中栏占满剩余空间
+    auto* drawing = new wxBoxSizer(wxVERTICAL);
+    drawing->Add(ui_theme::SectionHeader(workspace, U8("原理图"),
+                                       wxEmptyString, &m_canvasHint),
+                 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
+    drawing->Add(ui_theme::Rule(workspace), 0, wxEXPAND | wxLEFT | wxRIGHT, 1);
+    drawing->Add(m_canvas, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
+    workspace->SetSizer(drawing);
+    UpdateCanvasHint();
+
+    // 左/右保留原生控件,中间的画布占满可用空间。
     auto* sizer = new wxBoxSizer(wxHORIZONTAL);
-    sizer->Add(m_palette, 0, wxEXPAND | wxALL, 4);
-    sizer->Add(m_canvas, 1, wxEXPAND | wxALL, 4);
-    sizer->Add(m_props, 0, wxEXPAND | wxALL, 4);
-    SetSizer(sizer);
+    sizer->Add(m_palette, 0, wxEXPAND | wxTOP | wxBOTTOM | wxLEFT, 10);
+    sizer->AddSpacer(8);
+    sizer->Add(workspace, 1, wxEXPAND | wxTOP | wxBOTTOM | wxRIGHT, 10);
+    sizer->Add(m_props, 0, wxEXPAND | wxTOP | wxBOTTOM | wxRIGHT, 10);
+    auto* root = new wxBoxSizer(wxVERTICAL);
+    root->Add(m_topBar, 0, wxEXPAND);
+    root->Add(sizer, 1, wxEXPAND);
+    SetSizer(root);
 
     Layout();
 }
@@ -165,11 +227,41 @@ void UiMainFrame::BindCommands() {
     Bind(wxEVT_TOOL, &UiMainFrame::OnSave, this, wxID_SAVE);
     Bind(wxEVT_TOOL, &UiMainFrame::OnExportNetlist, this, ID_EXPORT);
 
+    Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+        const bool show = !m_commandToolbar->IsShown();
+        m_commandToolbar->Show(show);
+        GetMenuBar()->Check(ID_SHOW_TOOLBAR, show);
+        m_topBar->Layout(); Layout();
+    }, ID_SHOW_TOOLBAR);
+    Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+        const bool show = !m_props->IsShown();
+        m_props->Show(show);
+        GetMenuBar()->Check(ID_SHOW_PROPERTIES, show);
+        Layout();
+    }, ID_SHOW_PROPERTIES);
+    Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& e) { e.Check(m_commandToolbar->IsShown()); }, ID_SHOW_TOOLBAR);
+    Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& e) { e.Check(m_props->IsShown()); }, ID_SHOW_PROPERTIES);
+    const int snapIds[] = {ID_SNAP_1, ID_SNAP_5, ID_SNAP_10, ID_SNAP_20};
+    const int steps[] = {1,5,10,20};
+    for(int i=0;i<4;++i) {
+        Bind(wxEVT_MENU,[this,step=steps[i],id=snapIds[i]](wxCommandEvent&) {
+            if(m_canvas->SetSnapStep(step)) { GetMenuBar()->Check(id,true); UpdateCanvasHint(); }
+        },snapIds[i]);
+        Bind(wxEVT_UPDATE_UI,[this,step=steps[i]](wxUpdateUIEvent& e) {e.Check(m_canvas->SnapStep()==step);},snapIds[i]);
+    }
+
     // 撤销 / 重做:菜单与工具栏都按"有没有东西可撤"置灰
     Bind(wxEVT_TOOL, &UiMainFrame::OnUndo, this, wxID_UNDO);
     Bind(wxEVT_TOOL, &UiMainFrame::OnRedo, this, wxID_REDO);
     Bind(wxEVT_UPDATE_UI, &UiMainFrame::OnUpdateUndo, this, wxID_UNDO);
     Bind(wxEVT_UPDATE_UI, &UiMainFrame::OnUpdateRedo, this, wxID_REDO);
+}
+
+void UiMainFrame::UpdateCanvasHint() {
+    if(m_canvasHint) {
+        m_canvasHint->SetLabel(wxString::Format(U8("吸附 %d 单位 · Alt 自由移动 · 方向键微调 · 中键平移"), m_canvas->SnapStep()));
+        m_canvasHint->GetParent()->Layout();
+    }
 }
 
 void UiMainFrame::ReloadSubcircuits() {
@@ -187,12 +279,13 @@ void UiMainFrame::OnSaveSubcircuit(wxCommandEvent&) {
     editor::Schematic fragment;
     wxString error;
     if (!m_canvas->ExportSelection(&fragment, &error)) { SetStatusText(error, 0); return; }
-    wxTextEntryDialog dialog(this, U8("输入子电路名称（自动添加 .json）"), U8("封存为子电路"));
+    ui_theme::NameDialog dialog(this);
     if (dialog.ShowModal() != wxID_OK) return;
     wxString name = dialog.GetValue(); name.Trim().Trim(false);
     bool overwrite = false;
     if (wxFileName(m_subcircuits.Directory(), name + ".json").FileExists()) {
-        overwrite = wxMessageBox(U8("已有同名子电路，是否覆盖？"), U8("确认覆盖"), wxYES_NO | wxNO_DEFAULT, this) == wxYES;
+        ui_theme::ConfirmDialog confirm(this);
+        overwrite = confirm.ShowModal() == wxID_YES;
         if (!overwrite) return;
     }
     if (!m_subcircuits.Save(name, fragment, overwrite, &error)) { SetStatusText(error, 0); return; }

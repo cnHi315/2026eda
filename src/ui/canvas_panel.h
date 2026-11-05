@@ -33,7 +33,7 @@ class CanvasPanel : public wxPanel {
 public:
     /// 状态栏文本(选中 / 拖拽中 / 连线中 / 失败原因 / 放置模式)。
     using StatusCallback = std::function<void(const wxString&)>;
-    /// 选中变化:传 nullptr 表示没有选中元件(选中导线或空白)。
+    /// 属性检查对象变化:选中或拖动中的元件；nullptr表示没有检查对象。
     using SelectionCallback = std::function<void(const editor::Component*)>;
     /// 文档发生结构变化(放置 / 删除 / 连线 / 拨开关):通知外层刷新计数与属性表。
     using ChangedCallback = std::function<void()>;
@@ -55,8 +55,12 @@ public:
     void ClearPlacementType();
     const std::string& PlacementType() const { return m_placeType; }
     bool SetSubcircuitPlacement(const editor::Schematic& fragment, const std::string& name);
+    bool SetSnapStep(int step);
+    int SnapStep() const { return m_snapStep; }
     bool HasSubcircuitPlacement() const { return m_placeFragment; }
     const std::set<std::string>& SelectedIds() const { return m_selectedIds; }
+    /// 选中数量，或拖动时已捕获的组数量（拖动中选中集为空）。
+    size_t ActiveComponentCount() const;
     bool ExportSelection(editor::Schematic* fragment, wxString* error) const;
 
     /// 删除当前选中的元件 / 导线(Delete 键与"编辑 → 删除"共用)。
@@ -103,6 +107,8 @@ private:
     void OnSize(wxSizeEvent& evt);
     void OnLeftDown(wxMouseEvent& evt);
     void OnLeftDClick(wxMouseEvent& evt);
+    bool HandleSwitchPress(wxMouseEvent& evt, const HitResult& hit);
+    void ClearSwitchClick();
     void OnMotion(wxMouseEvent& evt);
     void OnLeftUp(wxMouseEvent& evt);
     void OnMiddleDown(wxMouseEvent& evt);
@@ -123,6 +129,7 @@ private:
     wxRect SelectionBox() const;
     void UpdateSelectionFocus();
     void MoveDraggedTo(const editor::Point& position);
+    void RestoreDragSelection();
     wxRect DragArea() const;
     wxSize TextSize8(const std::string& text) const;
 
@@ -155,14 +162,15 @@ private:
     const editor::Component* Find(const std::string& id) const;
     const editor::Schematic& S() const;
     bool PinRefLogicalPos(const editor::PinRef& pin, editor::Point* out) const;
-    static editor::Point SnapToGrid(const editor::Point& p);
+    editor::Point SnapToGrid(const editor::Point& p, bool bypass = false) const;
+    bool NudgeSelection(const editor::Point& delta);
     static bool IsOutputPin(const editor::Component& c, int pinIndex);
     static bool IsSwitch(const editor::Component& c);
     static bool IsLed(const editor::Component& c);
 
     // —— 写操作(全部走 model) ——
-    bool PlaceAt(const editor::Point& logical);
-    bool PlaceFragmentAt(const editor::Point& logical);
+    bool PlaceAt(const editor::Point& logical, bool bypass = false);
+    bool PlaceFragmentAt(const editor::Point& logical, bool bypass = false);
     bool CanConnect(const editor::PinRef& from, const editor::PinRef& to,
                     wxString* reason) const;
     void AddWire(const editor::PinRef& from, const editor::PinRef& to);
@@ -220,7 +228,13 @@ private:
     std::string m_dragId;
     editor::Point m_dragGrab{0, 0};
     editor::Point m_dragOrig{0, 0};
+    int m_snapStep = 1;
     bool m_dragMoved = false;
+    // Pair completed clicks ourselves: GTK reports rapid triples as down/double/down.
+    std::string m_switchClickId;
+    wxPoint m_switchClickPoint;
+    unsigned long m_switchClickTime = 0;
+    bool m_switchClickReleased = false;
     editor::Schematic m_dragBefore;     ///< 按下时的快照(抬起提交后才入栈)
     editor::PinRef m_wireFrom;
     editor::Point m_mouseLogical{0, 0};

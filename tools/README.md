@@ -77,7 +77,7 @@ python3 tools/verify_issues14.py    # 画布平移(issue 1)+ 局部重绘/性能
 - **别信 wx 报的屏幕坐标**:`ClientToScreen` / `GetScreenPosition` 与截图实际像素在 y 方向
   对不上,要用"已知逻辑位置的元件"标定画布原点(见 `verify_issues14.py`)。
 - **网格比较注意周期**:粗网格线间距 200px,基准图要取"上一次平移之后"的。
-- **栅格吸附**:放置 / 拖动都吸附 20 逻辑像素,脚本坐标直接用 20 的倍数。
+- **栅格吸附**:历史验证台显式选择20单位选项，脚本保持原20单位断言；正式程序默认1单位。
 
 ## B · 第七周更新（2026-10-29）
 
@@ -87,3 +87,16 @@ python3 tools/verify_issues14.py    # 画布平移(issue 1)+ 局部重绘/性能
 
 新功能和Bug定向测试见 `tests/b_subcircuit_test.cpp`、`tests/b_bug_audit.cpp`、
 `tests/b_perf_count_probe.py`；构建/结果详见 [B-TODOLIST](../docs/B-TODOLIST.md)。
+
+
+### B：灰阶界面与相邻条目点击回归（2026-11-05）
+
+`tests/b_ui_gray_test.cpp` 覆盖元件库整行边缘/空白处、相邻单双击、键盘、实际放置、灰阶像素、禁用/取消、菜单派发与对话框键盘；还覆盖列表字号/行距、六个等宽文字按钮、视图勾选显隐、画布宽度恢复和隐藏工具栏后的Ctrl+N。按 `docs/B-TODOLIST.md` 的命令独立编译；`GDK_SCALE=1/2` 分别运行。设置 `B_GRAY_NATIVE_POINTER=1` 时，通过 `wxUIActionSimulator` 向当前 DISPLAY 发送指针事件，应使用独立测试显示器；不设置时仅走 wx 事件注入路径。最新浅灰/布局版本在双缩放下各52项通过，证据见本机 `build-bug-audit/evidence/week8-layout/`。原 `verify_issues14.py` 按两倍缩放断言像素位移，运行时需设置 `GDK_SCALE=2`。
+
+GUI 验证台的 UI 源列表现在包含 `ui_theme.cpp`。X11 截图脚本读取 DISPLAY，并用 xprop 的 `_NET_WM_PID` 匹配验证进程；元件扫描限定在画布内，粗网格线相邻像素列合并为线中心，以适应高分屏。原位移、功能和性能门槛保持。
+
+属性区已改为三张无灰底、无表格线的信息卡片；交互测试增加卡片独立性/对齐、长名称换行与纵向滚动、拖动实时位置及取消还原。`b_bug_audit.cpp`新增连续开关和10单位辅助网格检查：未设置指针模式时30项，设置`B_GRAY_NATIVE_POINTER=1`时33项（其中12次原生点击→6次切换、超时单击与重新双击）。主窗口交互测试也核对12次原生开关点击。
+
+`b_precision_test.cpp`专测默认1单位、视图1/5/10/20互斥选择、Alt临时自由操作、方向键/Shift方向键、子电路整组微调及撤销/取消，双缩放各20/20。独立编译方式与`b_ui_gray_test.cpp`相同，替换文件/输出名称即可。辅助网格10单位不会约束实际坐标精度。
+
+本体选中与拖动行为变更：`tests/b_selection_test.cpp`在双缩放下各21/21，检查本体蓝色/无外围框、拖动实际取消选定、实时检查、组移动和取消/历史。原阶段四脚本保留蓝色像素门槛，描述改为本体变蓝；细调测试先重新选中已拖动的元件再操作。当前证据在`build-bug-audit/evidence/week8-selection/`。

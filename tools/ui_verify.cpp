@@ -61,6 +61,8 @@ public:
             std::printf("FATAL: 找不到 CanvasPanel\n");
             return false;
         }
+        // Historical command scripts explicitly verify the 20-unit snapping mode.
+        canvas->SetSnapStep(20);
         timer.Bind(wxEVT_TIMER, &VerifyApp::OnTick, this);
         timer.Start(120);
         return true;
@@ -106,6 +108,8 @@ private:
         is >> cmd;
 
         if (cmd == "quit") {
+            exiting = true;
+            timer.Stop();
             std::printf("OK %s\n", line.c_str());
             std::fflush(stdout);
             frame->Close(true);

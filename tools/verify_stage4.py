@@ -24,7 +24,7 @@ FRAME_LOGICAL_W = 1100.0                  # UiMainFrame 的逻辑宽度
 
 X11 = ctypes.CDLL("libX11.so.6")
 X11.XOpenDisplay.restype = ctypes.c_void_p
-DPY = X11.XOpenDisplay(b":0")
+DPY = X11.XOpenDisplay(os.environ.get("DISPLAY", ":0").encode())
 
 
 class XImage(ctypes.Structure):
@@ -57,7 +57,7 @@ def build_harness():
     libs = subprocess.run(["wx-config", "--libs", "core,base,propgrid"],
                           capture_output=True, text=True).stdout.split()
     sources = [os.path.join(REPO, "src/ui", f"{n}.cpp") for n in
-               ("canvas_panel", "component_palette", "main_frame", "property_panel", "subcircuit_library")]
+               ("canvas_panel", "component_palette", "main_frame", "property_panel", "subcircuit_library", "ui_theme")]
     sources += [os.path.join(REPO, "src/model/schematic_model.cpp"),
                 os.path.join(REPO, "src/components/component_library.cpp"),
                 os.path.join(REPO, "src/io/netlist_io.cpp"),
@@ -67,13 +67,19 @@ def build_harness():
                     HARNESS_SRC, *sources, *libs, "-o", HARNESS_BIN], check=True)
 
 
-def find_window(title_part):
+def find_window(title_part, pid=None):
     for _ in range(40):
         out = subprocess.run(["xwininfo", "-root", "-tree"], capture_output=True,
                              text=True).stdout
         for line in out.splitlines():
             if title_part in line and "mutter" not in line:
-                return int(line.split()[0], 16)
+                wid = int(line.split()[0], 16)
+                if pid is not None:
+                    prop = subprocess.run(["xprop", "-id", hex(wid), "_NET_WM_PID"],
+                                          capture_output=True, text=True).stdout
+                    if prop.partition("=")[2].strip() != str(pid):
+                        continue
+                return wid
         time.sleep(0.25)
     raise SystemExit(f"没找到窗口:{title_part}")
 
@@ -102,7 +108,7 @@ class Harness:
         self.proc = subprocess.Popen([HARNESS_BIN], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, text=True, bufsize=1,
                                      env=os.environ.copy())
-        self.wid = find_window("Circuit Editor")
+        self.wid = find_window("Circuit Editor", self.proc.pid)
         self.w, self.h = window_size(self.wid)
         self.status0 = ""
         self.status1 = ""
@@ -225,7 +231,7 @@ def main():
     ux, uy = to_px(280, 240)
     u1_region = (ux - 45 * scale, uy - 35 * scale, ux + 45 * scale, uy + 35 * scale)
     blue = count(sel, sel_blue, u1_region)
-    check("选中高亮:点 U1 出现蓝色外框(阶段三回归)", blue > 300, f"蓝色像素 {blue}")
+    check("选中高亮:点 U1 本体变蓝(阶段三回归)", blue > 300, f"蓝色像素 {blue}")
     h.send("down 60 500")
     h.send("up 60 500")
 

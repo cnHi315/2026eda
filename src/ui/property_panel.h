@@ -1,23 +1,30 @@
 #pragma once
-// 右侧属性表面板(负责人 B,任务 2)。
-// 阶段四:显示选中元件(findComponent 的结果),只读。
-
+// B: read-only component information, grouped into separate white cards.
 #include <wx/panel.h>
+#include <utility>
+#include <vector>
 
-namespace editor {
-struct Component;
-} // namespace editor
-
-class wxPropertyGrid;
+namespace editor { struct Component; }
+class wxScrolledWindow;
+class wxBoxSizer;
+class wxStaticText;
 
 class PropertyPanel : public wxPanel {
 public:
     explicit PropertyPanel(wxWindow* parent);
-
-    /// 显示选中元件(只读);传 nullptr = 当前没有选中元件。
     void ShowComponent(const editor::Component* c);
     void ShowSelectionCount(size_t count);
-
 private:
-    wxPropertyGrid* m_grid = nullptr;
+    using Rows = std::vector<std::pair<wxString, wxString>>;
+    using Cards = std::vector<std::pair<wxString, Rows>>;
+    void PresentCards(const Cards& cards);
+    void BeginCards();
+    void AddCard(const wxString& title, const Rows& rows);
+    void EndCards();
+    void Reflow();
+    wxScrolledWindow* m_content = nullptr;
+    wxBoxSizer* m_cards = nullptr;
+    std::vector<std::pair<wxStaticText*, wxString>> m_values;
+    std::vector<wxString> m_structure;
+    int m_wrapWidth = -1;
 };
