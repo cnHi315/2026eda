@@ -96,3 +96,18 @@ if(BUILD_VERIFY_TOOLS)
     add_executable(ui_verify WIN32 tools/ui_verify.cpp ${TOOL_SOURCES})
     target_link_libraries(ui_verify ${wxWidgets_LIBRARIES})
 endif()
+
+# ---------------------------------------------------------------------------
+# 控制台测试目标:界面层定向测试(负责人 B)
+#   ./build/b_subcircuit_test  /  ./build/b_bug_audit
+# 与其它测试目标不同,它们要建真实窗口,所以链接 wxWidgets;
+# 同样是 WIN32 子系统程序( wxIMPLEMENT_APP 走 WinMain ),输出由调用方重定向。
+# ---------------------------------------------------------------------------
+set(LIB_SOURCES ${APP_SOURCES})
+list(REMOVE_ITEM LIB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+
+add_executable(b_subcircuit_test WIN32 tests/b_subcircuit_test.cpp ${LIB_SOURCES})
+target_link_libraries(b_subcircuit_test ${wxWidgets_LIBRARIES})
+
+add_executable(b_bug_audit WIN32 tests/b_bug_audit.cpp ${LIB_SOURCES})
+target_link_libraries(b_bug_audit ${wxWidgets_LIBRARIES})

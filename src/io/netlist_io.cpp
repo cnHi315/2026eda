@@ -1,6 +1,7 @@
 #include "io/netlist_io.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -91,16 +92,22 @@ std::string pinLabelOf(const Schematic& s, const PinRef& r) {
 ///   2. Windows 的 std::rename 在目标已存在时会失败,POSIX 却会直接覆盖。
 ///      先 remove 掉目标,两边行为就一致了。
 bool writeFile(const std::string& path, const std::string& content) {
-    const std::string tmp = path + ".tmp";
+    // 路径一律按 UTF-8 解释(u8path):Windows 上窄字符路径走 ANSI 代码页,
+    // 中文文件名会打不开或写到别处。
+    const std::filesystem::path dst = std::filesystem::u8path(path);
+    const std::filesystem::path tmp = std::filesystem::u8path(path + ".tmp");
+
     {
         std::ofstream out(tmp, std::ios::binary);
         if (!out.is_open()) return false;   // 目录不存在 / 没权限
         out << content;
         if (!out.good()) return false;      // 写一半失败(磁盘满等)
     }
-    std::remove(path.c_str());
-    if (std::rename(tmp.c_str(), path.c_str()) != 0) {
-        std::remove(tmp.c_str());
+    std::error_code ec;
+    std::filesystem::remove(dst, ec);       // Windows 的 rename 不会覆盖已存在的目标
+    std::filesystem::rename(tmp, dst, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
         return false;
     }
     return true;
@@ -158,7 +165,7 @@ bool NetlistIO::save(const Schematic& schematic, const std::string& path) {
 }
 
 bool NetlistIO::load(Schematic& schematic, const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
     if (!in.is_open()) return false;  // 文件打不开(别写 if (!in),见 writeFile 的注释)
 
     nlohmann::json j;

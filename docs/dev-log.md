@@ -248,7 +248,7 @@
 
 > 周末回填,没做完就写做到哪了。
 
-- **A**:
+- **A**:① **冻结基线** —— 在独立目录 `build-a` 做干净构建(配置 → 构建),**0 warning / 0 error**;七个测试目标全部跑通:components 45 / model 78 / io 83 / integration 22 / sim 8 + B 的子电路 **63** / Bug 回归 **18**,0 失败。② **修掉一个跨平台缺陷** —— `NetlistIO` 原先用窄字符路径打开文件,而 Windows 上窄路径走 ANSI 代码页,**中文文件名既存不了也读不回**;改用 `std::filesystem::u8path` 处理读、写、改名、删除四处。这正是 B 的子电路测试在 Windows 上 4 项 FAIL 并崩溃的根因,修完 **63/63** 通过。③ **可复现性** —— 干净目录从零配置 + 构建通过;顺带确认 `build/` 被 VS Code 的 CMake Tools 占锁时 `cmake --build` 会静默挂起(进程在、CPU 空转),换独立目录即可,与仓库无关。④ **演示包** —— `samples/demo.json` 已在库;子电路目录由 `SubcircuitLibrary` 首次保存时自动创建;`CircuitEditor.exe` 启动实测通过。
 - **B**:
 - **C**:
 - **D**:
@@ -257,4 +257,5 @@
 
 > 卡住的写这里:哪个文件、什么现象、想找谁。
 
--
+- **`b_bug_audit` 在 Windows 上跑完不退出** —— 18 项检查全部 PASS、0 FAIL,但窗口留在事件循环里,进程不结束;Linux 上正常。需要 B 在检查结束后关闭窗口(或在 `OnRun()` 末尾 `ExitMainLoop()`)。不影响结果,但会让自动化卡住。
+- **`build/` 被 VS Code 的 CMake Tools 占锁时,`cmake --build` 会静默挂起** —— `mingw32-make` 起来了但 CPU 空转、没有子进程、没有输出;连最小目标也一样。换独立构建目录(如 `build-a`)即可。这是本机环境问题,不是仓库缺陷。
