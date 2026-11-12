@@ -259,3 +259,34 @@
 
 - **`b_bug_audit` 在 Windows 上跑完不退出** —— 18 项检查全部 PASS、0 FAIL,但窗口留在事件循环里,进程不结束;Linux 上正常。需要 B 在检查结束后关闭窗口(或在 `OnRun()` 末尾 `ExitMainLoop()`)。不影响结果,但会让自动化卡住。
 - **`build/` 被 VS Code 的 CMake Tools 占锁时,`cmake --build` 会静默挂起** —— `mingw32-make` 起来了但 CPU 空转、没有子进程、没有输出;连最小目标也一样。换独立构建目录(如 `build-a`)即可。这是本机环境问题,不是仓库缺陷。
+
+## 第 9 周(2026-11-12 起)
+
+> 功能冻结继续。本周两件事:**把 gEDA 导出验到底**,以及演示与总结材料。
+> 老师新给了两份资料:`任务5参考`(gEDA 流程 + full_adder 全套文件)与 `附件2` 的五个报告模板。
+
+### 第 9 周计划
+
+- **A**:① **gEDA 导出收尾** —— `.pcb` 已被 pcb-rnd 实测读入并成功导出 Gerber;`.net` 在 `Load netlist file (detect format)` 下"无提示、无变化",本周定位是格式还是导入路径问题(对照 `任务5参考/文件/full_adder.net` 逐项比)。② **最终汇报** —— 现场讲解与演示(A 主讲)。③ 演示包最终检查:exe + `samples/demo.json/.net/.pcb` 齐全。
+- **B**:① 按 `B-TODOLIST.md` 的流程**彩排两遍并掐表**,负责演示当天的操作;② 只修彩排暴露的缺陷;③ 处理 Windows 侧两条待办 —— `b_ui_gray_test` 的 4 项按钮配色、`b_bug_audit` 退出码 3。
+- **C**:**总结报告** —— 按老师 `resources/附件2…` 里的模板写,素材从 `dev-log` / `test-plan` / `interfaces` / `architecture` 里取;写完交 A 复核。另:确认 `components_test` 45/45;真符号若仍未做,在报告里明确列入 v1.1。
+- **D**:**最终汇报 PPT** —— 做一份演示用的 PPT(架构图、模块分工、关键数据、演示截图),由 A 主讲;PPT 在演示前一周内定稿。另:核对 gEDA 网表里的网络与仿真用的 net 是否同一份数据;确认 `sim_test` / `integration_test` 全绿。
+
+> 本周关键路径:**gEDA 网表的导入验证** —— 这是任务 5 的验收点,目前 `.pcb` 已通、`.net` 未确认。
+
+### 第 9 周完成
+
+> 周末回填,没做完就写做到哪了。
+
+- **A**:① **gEDA 导出换血** —— `exportNetlist` 从 KiCad s-expression 改成 **gEDA/Pcb 网表**(`网名 ⇥ RefDes-引脚号 …`);新增 `exportPcbLayout` 输出 **gEDA pcb 布局文件**;菜单改成一次导出 `.net` + `.pcb` 两个文件,两边 RefDes 与引脚号同源。② **验证** —— pcb-rnd 3.1.4 读入 `samples/demo.pcb`,退出码 0、零错误,并成功导出 13 个 Gerber 文件;`.net` 的导入尚未确认。③ **测试** —— `io_test` 重写导出用例(网表逐行格式、pcb 文件头、括号配平、空原理图),**88/88**;顺带修掉 `makeDemo()` 里遗留的 `{"SW2", 1}` —— 开关自第 4 周起只有 1 个引脚,这根线一直被静默拒绝,而旧用例只比较"存前存后一致"所以没发现。④ **构建** —— 给 B 的五个界面测试挂上 CMake 目标(之前只能靠 `wx-config` 手工编),Windows 与 Linux 走同一条路。
+- **B**:
+- **C**:
+- **D**:
+
+### 第 9 周问题
+
+> 卡住的写这里:哪个文件、什么现象、想找谁。
+
+- **`samples/demo.net` 在 pcb-rnd 里导入"无提示、无变化"** —— 用 `Load netlist file (detect format)` 选文件后,既没有成功提示也没有报错,画布上看不到飞线。需要确认是网表字段写法、还是 pcb-rnd 的导入路径问题(对照 `resources/任务5参考/文件/full_adder.net`)。
+- **`b_ui_gray_test` 4 项按钮配色在 Windows 上失败** —— 采样值恒为纯白:`Pixel()` 对 `ActionButton` 采样的是**父窗口**的 `wxClientDC`,而 MSW 上父窗口的 DC 不包含子窗口。需改成采按钮自己的 DC。
+- **`b_bug_audit` 在 Windows 上退出码 3、没打 SUMMARY** —— 停在 B-HIS-004 之后,下一步会再 `new` 一个 `UiMainFrame`。
