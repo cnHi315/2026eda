@@ -1,6 +1,5 @@
 #include "io/netlist_io.h"
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -41,45 +40,6 @@ PinRef pinRefFromJson(const nlohmann::json& j) {
     r.componentId = j.at("componentId").get<std::string>();  // 必需字段,缺了就抛
     r.pinIndex    = j.value("pinIndex", 0);
     return r;
-}
-
-// ------------------------------------------------------------- 网表导出工具
-
-/// 由元件 id 生成一个稳定的 UUID 字符串(KiCad 的 comp 节点要这个字段)。
-/// 同一份原理图每次导出结果都一样,方便 git diff。
-std::string stableUuid(const std::string& seed) {
-    auto fnv = [](const std::string& s) {
-        unsigned long long h = 1469598103934665603ULL;
-        for (unsigned char ch : s) {
-            h ^= ch;
-            h *= 1099511628211ULL;
-        }
-        return h;
-    };
-    const unsigned long long a = fnv(seed);
-    const unsigned long long b = fnv(seed + "|2026eda");
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "%08llx-%04llx-%04llx-%04llx-%012llx",
-                  (a >> 32) & 0xFFFFFFFFULL,
-                  (a >> 16) & 0xFFFFULL,
-                  a & 0xFFFFULL,
-                  (b >> 48) & 0xFFFFULL,
-                  b & 0xFFFFFFFFFFFFULL);
-    return std::string(buf);
-}
-
-const Component* findIn(const Schematic& s, const std::string& id) {
-    for (const Component& c : s.components)
-        if (c.id == id) return &c;
-    return nullptr;
-}
-
-/// 网表里的引脚写成名字("A" / "Y")而不是下标 —— KiCad 按名字认引脚。
-std::string pinLabelOf(const Schematic& s, const PinRef& r) {
-    const Component* c = findIn(s, r.componentId);
-    if (c && r.pinIndex >= 0 && r.pinIndex < (int)c->pins.size())
-        return c->pins[r.pinIndex].name;
-    return std::to_string(r.pinIndex);  // 兜底:认不出来就用下标
 }
 
 // ------------------------------------------------------------------ 文件写入
@@ -225,39 +185,60 @@ bool NetlistIO::load(Schematic& schematic, const std::string& path) {
 // ================================================================== 网表导出
 
 bool NetlistIO::exportNetlist(const Schematic& schematic, const std::string& path) {
+    // gEDA/Pcb 网表:每行「网络名 + 若干 RefDes-引脚号」。引脚号 = pinIndex + 1。
     std::ostringstream out;
-    out << "(export (version D)\n";
-
-    out << "  (design\n";
-    out << "    (source \"" << path << "\")\n";
-    out << "    (tool \"2026eda CircuitEditor\")\n";
-    out << "  )\n";
-
-    out << "  (components\n";
-    for (const Component& c : schematic.components) {
-        out << "    (comp (ref \"" << c.id << "\")\n";
-        out << "      (value \"" << c.type << "\")\n";
-        out << "      (libsource (lib \"2026eda\") (part \"" << c.type << "\"))\n";
-        out << "      (sheetpath (names \"/\") (tstamps \"/\"))\n";
-        out << "      (tstamp " << stableUuid(c.id) << ")\n";
-        out << "    )\n";
-    }
-    out << "  )\n";
-
-    out << "  (nets\n";
-    int code = 1;
     for (const Net& n : schematic.nets) {
-        out << "    (net (code " << code++ << ") (name \""
-            << (n.name.empty() ? n.id : n.name) << "\")\n";
+        out << (n.name.empty() ? n.id : n.name) << '\t';
         for (const PinRef& p : n.pins) {
-            out << "      (node (ref \"" << p.componentId << "\") (pin \""
-                << pinLabelOf(schematic, p) << "\"))\n";
+            out << p.componentId << '-' << (p.pinIndex + 1) << ' ';
         }
-        out << "    )\n";
+        out << '\n';
     }
-    out << "  )\n";
+    return writeFile(path, out.str());
+}
 
-    out << ")\n";
+bool NetlistIO::exportPcbLayout(const Schematic& schematic, const std::string& path) {
+    // gEDA pcb 的布局文件。逻辑坐标 1 像素 = 10 mil;每个元件自带一套引脚,
+    // 引脚号与 exportNetlist 完全一致(1..N),所以 .net 能被这个 .pcb 直接吃下。
+    std::ostringstream out;
+    out << "# release: pcb 1.99x\n"
+           "FileVersion[20070407]\n"
+           "PCB[\"\" 600000 500000]\n"
+           "Grid[10000.000000 0 0 0]\n"
+           "Cursor[0 0 0.000000]\n"
+           "PolyArea[200000000.000000]\n"
+           "Thermal[0.500000]\n"
+           "DRC[1000 1000 1000 1000 1500 1000]\n"
+           "Flags(\"nameonpcb,uniquename,clearnew,snappin\")\n"
+           "Groups(\"1,c:2:3:4:5:6,s:7:8\")\n"
+           "Styles[\"Signal,1000,3600,2000,1000:Power,2500,6000,3500,1000:"
+           "Fat,4000,6000,3500,1000:Skinny,600,2402,1181,600\"]\n\n";
+
+    const int kMilPerPixel = 10;
+    for (const Component& c : schematic.components) {
+        const int n = static_cast<int>(c.pins.size());
+        const int width = (n > 0 ? n : 1) * 100;
+
+        out << "Element(0x00 \"" << c.type << "\" \"" << c.id << "\" \"" << c.id
+            << "\" " << c.pos.x * kMilPerPixel << ' ' << c.pos.y * kMilPerPixel
+            << " 0 100 0x00)\n(\n";
+        for (int i = 0; i < n; ++i) {
+            // 1 号脚是方焊盘(0x101),其余圆焊盘(0x01)—— 与参考文件一致
+            out << "\tPin(" << (50 + i * 100) << " 50 60 28 \"" << (i + 1) << "\" "
+                << (i == 0 ? "0x101" : "0x01") << ")\n";
+        }
+        out << "\tElementLine(0 0 " << width << " 0 10)\n";
+        out << "\tElementLine(" << width << " 0 " << width << " 200 10)\n";
+        out << "\tElementLine(" << width << " 200 0 200 10)\n";
+        out << "\tElementLine(0 200 0 0 10)\n";
+        out << ")\n";
+    }
+
+    static const char* kLayers[] = {"top",     "ground",  "signal2", "signal3", "power",
+                                    "bottom",  "outline", "spare",   "silk",    "silk"};
+    for (int i = 0; i < 10; ++i) {
+        out << "Layer(" << (i + 1) << " \"" << kLayers[i] << "\")\n(\n)\n";
+    }
     return writeFile(path, out.str());
 }
 

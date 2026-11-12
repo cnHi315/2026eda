@@ -370,16 +370,25 @@ void UiMainFrame::OnExportNetlist(wxCommandEvent&) {
         SetStatusText(U8("导出失败:原理图是空的,先放几个元件"), 0);
         return;
     }
-    wxFileDialog dlg(this, U8("导出网表"), "", "demo.net",
-                     U8("KiCad 网表 (*.net)|*.net"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    wxFileDialog dlg(this, U8("导出网表与 PCB 布局"), "", "demo.net",
+                     U8("gEDA 网表 (*.net)|*.net"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (dlg.ShowModal() != wxID_OK) {
         return;
     }
-    if (!m_io.exportNetlist(m_model.data(), Utf8Path(dlg.GetPath()))) {
-        SetStatusText(U8("导出失败:") + dlg.GetPath(), 0);
+    // 一次导出两个文件:同名 .net 与 .pcb,pcb 直接读这两个就能飞线布线
+    const wxString netPath = dlg.GetPath();
+    wxString pcbPath = netPath;
+    if (pcbPath.Lower().EndsWith(".net")) {
+        pcbPath = pcbPath.Left(pcbPath.length() - 4) + ".pcb";
+    } else {
+        pcbPath += ".pcb";
+    }
+    if (!m_io.exportNetlist(m_model.data(), Utf8Path(netPath)) ||
+        !m_io.exportPcbLayout(m_model.data(), Utf8Path(pcbPath))) {
+        SetStatusText(U8("导出失败:") + netPath, 0);
         return;
     }
-    SetStatusText(U8("已导出网表:") + dlg.GetPath(), 0);
+    SetStatusText(U8("已导出 ") + netPath + U8(" 与 ") + pcbPath, 0);
 }
 
 void UiMainFrame::OnDeleteSelection(wxCommandEvent&) {
