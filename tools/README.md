@@ -100,3 +100,39 @@ GUI 验证台的 UI 源列表现在包含 `ui_theme.cpp`。X11 截图脚本读�
 `b_precision_test.cpp`专测默认1单位、视图1/5/10/20互斥选择、Alt临时自由操作、方向键/Shift方向键、子电路整组微调及撤销/取消，双缩放各20/20。独立编译方式与`b_ui_gray_test.cpp`相同，替换文件/输出名称即可。辅助网格10单位不会约束实际坐标精度。
 
 本体选中与拖动行为变更：`tests/b_selection_test.cpp`在双缩放下各21/21，检查本体蓝色/无外围框、拖动实际取消选定、实时检查、组移动和取消/历史。原阶段四脚本保留蓝色像素门槛，描述改为本体变蓝；细调测试先重新选中已拖动的元件再操作。当前证据在`build-bug-audit/evidence/week8-selection/`。
+
+## B：第九周 Linux 演练与 gEDA 导入（2026-11-12）
+
+本周以 Linux 演示环境为准，不处理 Windows 专项异常。用独立目录构建 Release：
+
+```bash
+cmake -S . -B build-week9 -DCMAKE_BUILD_TYPE=Release -DBUILD_VERIFY_TOOLS=ON
+cmake --build build-week9 -j4
+```
+
+`b_linux_rehearsal.cpp` 串起真实主窗口的打开/另存为、AND四组输入、精细拖动与实时属性、历史、多选封存/重载放置、导出双文件、取消/非法文件保护和视图显隐。文件/名称对话框由测试钩子提供输入，画布操作走 wx 事件；不替代人工文件选择器验收或人工演示计时。每次使用新的输出目录，拒绝覆盖已有证据。GTK 文件选择器需要先映射并等待路径选定，不能仅 `SetPath()` 后立即返回。
+
+```bash
+g++ -std=c++17 -O3 -DNDEBUG -I src $(wx-config --cxxflags) \
+    tools/b_linux_rehearsal.cpp src/ui/*.cpp src/model/*.cpp \
+    src/components/*.cpp src/io/*.cpp src/simulation/*.cpp \
+    $(wx-config --libs core,base,propgrid) -o build-week9/b_linux_rehearsal
+# DISPLAY 指向独立测试显示器；不要向用户正在操作的桌面发送测试输入。
+DISPLAY=:98 GDK_BACKEND=x11 GDK_SCALE=1 \
+    B_REHEARSAL_OUTPUT=build-week9/evidence/rehearsal-new \
+    ./build-week9/b_linux_rehearsal
+```
+
+`b_verify_geda.py` 仅接受原版 gEDA PCB。脚本执行与菜单同源的 `LoadFrom(Netlist,...)`、`AddRats(AllRats)`、`SaveTo(LayoutAs,...)`，从PCB实际另存的文件核对3个网络的端点、引脚位置及3条飞线的对应关系；布局能加载或退出码0都不足以通过。PCB输出和启动警告一起存档。当前仅用于3个双端点网络、无铜线的演示样例，不作为任意电路或真实封装的验收器。
+
+```bash
+DISPLAY=:98 python3 tools/b_verify_geda.py \
+    --pcb-bin /tmp/eda-week9-tools/root/usr/bin/pcb-gtk \
+    --pcb-data /tmp/eda-week9-tools/root/usr/share/pcb \
+    --layout samples/demo.pcb --netlist samples/demo.net \
+    --output build-week9/evidence/geda-new
+```
+
+安装在系统的原版 PCB 可改用 `--pcb-bin pcb` 并省略 `--pcb-data`。本机解压环境来自 Ubuntu 官方存档的 [pcb-gtk](https://archive.ubuntu.com/ubuntu/pool/universe/p/pcb/pcb-gtk_4.3.0-4_amd64.deb) 和 [pcb-common](https://archive.ubuntu.com/ubuntu/pool/universe/p/pcb/pcb-common_4.3.0-4_all.deb)，版本4.3.0；临时目录在重启/清理后需重新准备，不能当作永久演示机安装。人工操作对应：打开布局 → File / Load netlist → 选择同名 `.net` → Connects / Optimize rats nest（O）或 Add All Rats（W）。菜单是否存在以原版PCB为准，pcb-rnd不能替代本次验收。
+
+首次对 `afed093` 的验证发现旧式布局引脚坐标重叠（B-BUG-013）：3个网络读入但只有2条飞线，脚本按实际引脚位置判失败；坐标对照副本通过。A负责修复导出器与样例，B收到更新通知后再拉取并复验。当前结果和人工待办见 [B-TODOLIST](../docs/B-TODOLIST.md#week9)。

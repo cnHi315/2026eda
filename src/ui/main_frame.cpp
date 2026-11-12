@@ -63,7 +63,7 @@ void UiMainFrame::BuildMenuBar() {
     fileMenu->Append(wxID_SAVE, U8("保存(&S)\tCtrl+S"), U8("保存为 JSON"));
     fileMenu->Append(wxID_SAVEAS, U8("另存为(&A)..."), U8("换个文件名保存"));
     fileMenu->AppendSeparator();
-    fileMenu->Append(ID_EXPORT, U8("导出网表(&E)\tCtrl+E"), U8("导出 KiCad 网表(.net)"));
+    fileMenu->Append(ID_EXPORT, U8("导出网表(&E)\tCtrl+E"), U8("导出 gEDA 网表(.net)与 PCB 布局(.pcb)"));
     fileMenu->AppendSeparator();
     fileMenu->Append(wxID_EXIT, U8("退出(&Q)\tCtrl+Q"), U8("退出程序"));
 
@@ -132,7 +132,7 @@ void UiMainFrame::BuildToolBar() {
     add(wxID_NEW,U8("新建"),U8("新建空白原理图 (Ctrl+N)"));
     add(wxID_OPEN,U8("打开"),U8("打开 JSON 原理图 (Ctrl+O)"));
     add(wxID_SAVE,U8("保存"),U8("保存 (Ctrl+S)"));
-    add(ID_EXPORT,U8("导出网表"),U8("导出 KiCad 网表 (Ctrl+E)"));
+    add(ID_EXPORT,U8("导出网表"),U8("导出 gEDA 网表与 PCB 布局 (Ctrl+E)"));
     add(wxID_UNDO,U8("撤销"),U8("撤销 (Ctrl+Z)"));
     add(wxID_REDO,U8("重做"),U8("重做 (Ctrl+Y)"));
     m_commandToolbar->SetSizer(commands);
