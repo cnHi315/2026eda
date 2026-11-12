@@ -268,7 +268,7 @@
 ### 第 9 周计划
 
 - **A**:① **gEDA 导出收尾** —— `.pcb` 已被 pcb-rnd 实测读入并成功导出 Gerber;`.net` 在 `Load netlist file (detect format)` 下"无提示、无变化",本周定位是格式还是导入路径问题(对照 `任务5参考/文件/full_adder.net` 逐项比)。② **最终汇报** —— 现场讲解与演示(A 主讲)。③ 演示包最终检查:exe + `samples/demo.json/.net/.pcb` 齐全。
-- **B**:① 按 `B-TODOLIST.md` 的流程**彩排两遍并掐表**,负责演示当天的操作;② 只修彩排暴露的缺陷;③ 处理 Windows 侧两条待办 —— `b_ui_gray_test` 的 4 项按钮配色、`b_bug_audit` 退出码 3。
+- **B**:① 按 `B-TODOLIST.md` 的流程**彩排两遍并掐表**,负责演示当天的操作;② 只修彩排暴露的缺陷;③ 处理 Windows 侧两条待办 —— `b_ui_gray_test` 的 4 项按钮配色、`b_bug_audit` 退出码 3;④ **用 gEDA 原版 `pcb` 验证网表导入** —— 拿 `samples/demo.pcb` + `samples/demo.net` 打开并导入,确认能看到 3 个网络的飞线,把结果回报 A(pcb-rnd 这条路径已确认对参考文件也无反应,见「第 9 周问题」)。
 - **C**:**总结报告** —— 按老师 `resources/附件2…` 里的模板写,素材从 `dev-log` / `test-plan` / `interfaces` / `architecture` 里取;写完交 A 复核。另:确认 `components_test` 45/45;真符号若仍未做,在报告里明确列入 v1.1。
 - **D**:**最终汇报 PPT** —— 做一份演示用的 PPT(架构图、模块分工、关键数据、演示截图),由 A 主讲;PPT 在演示前一周内定稿。另:核对 gEDA 网表里的网络与仿真用的 net 是否同一份数据;确认 `sim_test` / `integration_test` 全绿。
 
@@ -287,6 +287,6 @@
 
 > 卡住的写这里:哪个文件、什么现象、想找谁。
 
-- **`samples/demo.net` 在 pcb-rnd 里导入"无提示、无变化"** —— 用 `Load netlist file (detect format)` 选文件后,既没有成功提示也没有报错,画布上看不到飞线。需要确认是网表字段写法、还是 pcb-rnd 的导入路径问题(对照 `resources/任务5参考/文件/full_adder.net`)。
+- **`samples/demo.net` 的导入验证(交给 B)** —— pcb-rnd 的 `Load netlist file (detect format)` 选完文件既无提示也无报错、画布没有飞线;**换成老师提供的 `full_adder.pcb` + `full_adder.net` 走同一操作,结果完全相同**,因此已定位为 pcb-rnd 这条菜单的行为,不是本项目的格式问题(两者逐字节同构)。`.pcb` 已由 pcb-rnd 实测加载并成功导出 13 个 Gerber。**剩余待验:用 gEDA 原版 `pcb` 导入一次** —— B 在 Linux 上装好或编好 gEDA 后跑,把结果回报 A。
 - **`b_ui_gray_test` 4 项按钮配色在 Windows 上失败** —— 采样值恒为纯白:`Pixel()` 对 `ActionButton` 采样的是**父窗口**的 `wxClientDC`,而 MSW 上父窗口的 DC 不包含子窗口。需改成采按钮自己的 DC。
 - **`b_bug_audit` 在 Windows 上退出码 3、没打 SUMMARY** —— 停在 B-HIS-004 之后,下一步会再 `new` 一个 `UiMainFrame`。
