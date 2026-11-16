@@ -63,7 +63,7 @@ void UiMainFrame::BuildMenuBar() {
     fileMenu->Append(wxID_SAVE, U8("保存(&S)\tCtrl+S"), U8("保存为 JSON"));
     fileMenu->Append(wxID_SAVEAS, U8("另存为(&A)..."), U8("换个文件名保存"));
     fileMenu->AppendSeparator();
-    fileMenu->Append(ID_EXPORT, U8("导出网表(&E)\tCtrl+E"), U8("导出 KiCad 网表(.net)"));
+    fileMenu->Append(ID_EXPORT, U8("导出网表(&E)\tCtrl+E"), U8("导出 gEDA 网表(.net)与 PCB 布局(.pcb)"));
     fileMenu->AppendSeparator();
     fileMenu->Append(wxID_EXIT, U8("退出(&Q)\tCtrl+Q"), U8("退出程序"));
 
@@ -132,7 +132,7 @@ void UiMainFrame::BuildToolBar() {
     add(wxID_NEW,U8("新建"),U8("新建空白原理图 (Ctrl+N)"));
     add(wxID_OPEN,U8("打开"),U8("打开 JSON 原理图 (Ctrl+O)"));
     add(wxID_SAVE,U8("保存"),U8("保存 (Ctrl+S)"));
-    add(ID_EXPORT,U8("导出网表"),U8("导出 KiCad 网表 (Ctrl+E)"));
+    add(ID_EXPORT,U8("导出网表"),U8("导出 gEDA 网表与 PCB 布局 (Ctrl+E)"));
     add(wxID_UNDO,U8("撤销"),U8("撤销 (Ctrl+Z)"));
     add(wxID_REDO,U8("重做"),U8("重做 (Ctrl+Y)"));
     m_commandToolbar->SetSizer(commands);
@@ -370,16 +370,25 @@ void UiMainFrame::OnExportNetlist(wxCommandEvent&) {
         SetStatusText(U8("导出失败:原理图是空的,先放几个元件"), 0);
         return;
     }
-    wxFileDialog dlg(this, U8("导出网表"), "", "demo.net",
-                     U8("KiCad 网表 (*.net)|*.net"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    wxFileDialog dlg(this, U8("导出网表与 PCB 布局"), "", "demo.net",
+                     U8("gEDA 网表 (*.net)|*.net"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
     if (dlg.ShowModal() != wxID_OK) {
         return;
     }
-    if (!m_io.exportNetlist(m_model.data(), Utf8Path(dlg.GetPath()))) {
-        SetStatusText(U8("导出失败:") + dlg.GetPath(), 0);
+    // 一次导出两个文件:同名 .net 与 .pcb,pcb 直接读这两个就能飞线布线
+    const wxString netPath = dlg.GetPath();
+    wxString pcbPath = netPath;
+    if (pcbPath.Lower().EndsWith(".net")) {
+        pcbPath = pcbPath.Left(pcbPath.length() - 4) + ".pcb";
+    } else {
+        pcbPath += ".pcb";
+    }
+    if (!m_io.exportNetlist(m_model.data(), Utf8Path(netPath)) ||
+        !m_io.exportPcbLayout(m_model.data(), Utf8Path(pcbPath))) {
+        SetStatusText(U8("导出失败:") + netPath, 0);
         return;
     }
-    SetStatusText(U8("已导出网表:") + dlg.GetPath(), 0);
+    SetStatusText(U8("已导出 ") + netPath + U8(" 与 ") + pcbPath, 0);
 }
 
 void UiMainFrame::OnDeleteSelection(wxCommandEvent&) {

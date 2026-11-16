@@ -106,8 +106,7 @@ endif()
 set(LIB_SOURCES ${APP_SOURCES})
 list(REMOVE_ITEM LIB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
-add_executable(b_subcircuit_test WIN32 tests/b_subcircuit_test.cpp ${LIB_SOURCES})
-target_link_libraries(b_subcircuit_test ${wxWidgets_LIBRARIES})
-
-add_executable(b_bug_audit WIN32 tests/b_bug_audit.cpp ${LIB_SOURCES})
-target_link_libraries(b_bug_audit ${wxWidgets_LIBRARIES})
+foreach(t b_subcircuit_test b_bug_audit b_precision_test b_selection_test b_ui_gray_test)
+    add_executable(${t} WIN32 tests/${t}.cpp ${LIB_SOURCES})
+    target_link_libraries(${t} ${wxWidgets_LIBRARIES})
+endforeach()

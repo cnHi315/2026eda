@@ -72,7 +72,7 @@ SchematicModel makeDemo() {
     m.addElement("AND",    {300, 200});   // U1
     m.addElement("LED",    {500, 200});   // LED1
     m.addWire({"SW1", 0}, {"U1", 0});     // wire1
-    m.addWire({"SW2", 1}, {"U1", 1});     // wire2
+    m.addWire({"SW2", 0}, {"U1", 1});     // wire2(开关只有 1 个引脚,序号是 0)
     m.addWire({"U1", 2},  {"LED1", 0});   // wire3
     return m;
 }
@@ -182,7 +182,7 @@ void testLoadFromRebuildsNets() {
 
 /// 导出 KiCad 网表(T-05)
 void testExportNetlist() {
-    std::cout << "\n== 4. 导出 KiCad 网表 ==\n";
+    std::cout << "\n== 4. 导出 gEDA 网表 ==\n";
     const SchematicModel m = makeDemo();
     NetlistIO io;
 
@@ -191,7 +191,47 @@ void testExportNetlist() {
 
     const std::string text = slurp(kNet);
 
-    // s-expression 的基本合法性:括号配平
+    // 每行一个网络:「网络名 \t RefDes-引脚号 …」,引脚号 = pinIndex + 1
+    CHECK(text.find("net1\t") != std::string::npos);
+    CHECK(text.find("SW1-1") != std::string::npos);    // 开关只有一个引脚
+    CHECK(text.find("U1-1") != std::string::npos);     // 与门 A 脚 = 1
+    CHECK(text.find("U1-2") != std::string::npos);     // B 脚 = 2
+    CHECK(text.find("U1-3") != std::string::npos);     // Y 脚 = 3
+    CHECK(text.find("LED1-1") != std::string::npos);
+
+    int lines = 0;
+    for (char c : text) if (c == '\n') ++lines;
+    CHECK(lines == 3);                                 // 三个网络三行
+
+    const std::string first = text;                    // 导出两次结果一致
+    CHECK(io.exportNetlist(m.data(), kNet));
+    CHECK(slurp(kNet) == first);
+}
+
+void testExportPcbLayout() {
+    std::cout << "\n== 5. 导出 gEDA pcb 布局 ==\n";
+    const SchematicModel m = makeDemo();
+    NetlistIO io;
+
+    const std::string path = tmpPath("demo.pcb");
+    CHECK(io.exportPcbLayout(m.data(), path));
+    CHECK(fileExists(path));
+
+    const std::string text = slurp(path);
+
+    // 文件头与版本号 —— pcb 靠这个判断能不能读
+    CHECK(text.find("# release: pcb 1.99x") == 0);
+    CHECK(text.find("FileVersion[20070407]") != std::string::npos);
+
+    // 每个元件一个 Element,RefDes 与网表一致
+    CHECK(text.find("\"SW1\"") != std::string::npos);
+    CHECK(text.find("\"U1\"") != std::string::npos);
+    CHECK(text.find("\"LED1\"") != std::string::npos);
+
+    // 引脚号与网表对得上:与门有三个脚
+    CHECK(text.find("\"3\" 0x01)") != std::string::npos);
+
+    // 括号配平
     int depth = 0;
     bool balanced = true;
     for (char c : text) {
@@ -200,38 +240,18 @@ void testExportNetlist() {
     }
     CHECK(balanced);
     CHECK(depth == 0);
-
-    CHECK(text.find("(export (version D)") != std::string::npos);
-    CHECK(text.find("(components") != std::string::npos);
-    CHECK(text.find("(nets") != std::string::npos);
-
-    // 四个元件都在
-    CHECK(text.find("(ref \"SW1\")") != std::string::npos);
-    CHECK(text.find("(ref \"SW2\")") != std::string::npos);
-    CHECK(text.find("(ref \"U1\")") != std::string::npos);
-    CHECK(text.find("(ref \"LED1\")") != std::string::npos);
-
-    // 网络与引脚:SW1 的 Y 接到 U1 的 A —— 网表里要写引脚名,不是下标
-    CHECK(text.find("(name \"net1\")") != std::string::npos);
-    CHECK(text.find("(node (ref \"SW1\") (pin \"Y\"))") != std::string::npos);
-    CHECK(text.find("(node (ref \"U1\") (pin \"A\"))") != std::string::npos);
-
-    // 导出两次结果必须一样(stableUuid 是确定性的,文件里没有时间戳)
-    const std::string first = text;
-    CHECK(io.exportNetlist(m.data(), kNet));
-    CHECK(slurp(kNet) == first);
 }
 
 void testExportEdgeCases() {
-    std::cout << "\n== 5. 空原理图 / 写不进去的路径 ==\n";
+    std::cout << "\n== 6. 空原理图 / 写不进去的路径 ==\n";
     NetlistIO io;
 
+    // 空原理图:网表是空文件;pcb 仍然要有文件头,否则 pcb 打不开
     const Schematic empty;
     CHECK(io.exportNetlist(empty, tmpPath("empty.net")));
-    const std::string e = slurp(tmpPath("empty.net"));
-    CHECK(e.find("(components") != std::string::npos);
-    CHECK(e.find("(nets") != std::string::npos);
-    CHECK(e.find("(ref ") == std::string::npos);   // 没有元件
+    CHECK(slurp(tmpPath("empty.net")).empty());
+    CHECK(io.exportPcbLayout(empty, tmpPath("empty.pcb")));
+    CHECK(slurp(tmpPath("empty.pcb")).find("FileVersion[20070407]") != std::string::npos);
 
     // 目录不存在 -> 失败,而且不留垃圾
     const SchematicModel m = makeDemo();
@@ -307,6 +327,7 @@ int main() {
     testBadInput();
     testLoadFromRebuildsNets();
     testExportNetlist();
+    testExportPcbLayout();
     testExportEdgeCases();
     testEditAfterLoad();
 
