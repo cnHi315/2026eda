@@ -231,6 +231,10 @@ void testExportPcbLayout() {
     // 引脚号与网表对得上:与门有三个脚
     CHECK(text.find("\"3\" 0x01)") != std::string::npos);
 
+    // 引脚坐标必须是**板子绝对坐标**:SW1 在 (100,100) → 1 像素 10 mil → 脚在 (1050,1050)
+    CHECK(text.find("Pin(1050 1050 60 28 \"1\"") != std::string::npos);
+    CHECK(text.find("Pin(1050 3050 60 28 \"1\"") != std::string::npos);   // SW2 在 (100,300)
+
     // 括号配平
     int depth = 0;
     bool balanced = true;

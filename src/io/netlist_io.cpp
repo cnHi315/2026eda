@@ -218,19 +218,25 @@ bool NetlistIO::exportPcbLayout(const Schematic& schematic, const std::string& p
     for (const Component& c : schematic.components) {
         const int n = static_cast<int>(c.pins.size());
         const int width = (n > 0 ? n : 1) * 100;
+        const int ex = c.pos.x * kMilPerPixel;
+        const int ey = c.pos.y * kMilPerPixel;
 
         out << "Element(0x00 \"" << c.type << "\" \"" << c.id << "\" \"" << c.id
-            << "\" " << c.pos.x * kMilPerPixel << ' ' << c.pos.y * kMilPerPixel
-            << " 0 100 0x00)\n(\n";
+            << "\" " << ex << ' ' << ey << " 0 100 0x00)\n(\n";
+        // 注意:Pin / ElementLine 用的是**板子绝对坐标**,不是相对元件的。
+        // 必须在写的时候自己加上元件原点,否则所有引脚会堆在原点附近,
+        // 网表导入后飞线也会少(第 9 周 B 用原版 gEDA pcb 复现)。
         for (int i = 0; i < n; ++i) {
             // 1 号脚是方焊盘(0x101),其余圆焊盘(0x01)—— 与参考文件一致
-            out << "\tPin(" << (50 + i * 100) << " 50 60 28 \"" << (i + 1) << "\" "
-                << (i == 0 ? "0x101" : "0x01") << ")\n";
+            out << "\tPin(" << (ex + 50 + i * 100) << ' ' << (ey + 50) << " 60 28 \""
+                << (i + 1) << "\" " << (i == 0 ? "0x101" : "0x01") << ")\n";
         }
-        out << "\tElementLine(0 0 " << width << " 0 10)\n";
-        out << "\tElementLine(" << width << " 0 " << width << " 200 10)\n";
-        out << "\tElementLine(" << width << " 200 0 200 10)\n";
-        out << "\tElementLine(0 200 0 0 10)\n";
+        out << "\tElementLine(" << ex << ' ' << ey << ' ' << (ex + width) << ' ' << ey << " 10)\n";
+        out << "\tElementLine(" << (ex + width) << ' ' << ey << ' ' << (ex + width) << ' '
+            << (ey + 200) << " 10)\n";
+        out << "\tElementLine(" << (ex + width) << ' ' << (ey + 200) << ' ' << ex << ' '
+            << (ey + 200) << " 10)\n";
+        out << "\tElementLine(" << ex << ' ' << (ey + 200) << ' ' << ex << ' ' << ey << " 10)\n";
         out << ")\n";
     }
 
